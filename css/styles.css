@@ -688,6 +688,10 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
   .page-wide { padding-bottom: 90px; }
   :root { --inspector-w: 100vw; }
 
+  /* Notch / Dynamic Island / status bar: senza questo padding il contenuto in cima
+     alla pagina ci finisce sotto e resta coperto/illeggibile. */
+  .inspector { padding-top: env(safe-area-inset-top); }
+
   /* Tabbar in basso, al posto della rail laterale */
   .mobile-tabbar {
     display: flex;
@@ -716,8 +720,8 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
   .mobile-tab-icon { font-size: 18px; line-height: 1; }
   .mobile-tab-label { white-space: nowrap; }
 
-  /* Spazio in fondo per non far finire i contenuti sotto la tabbar fissa */
-  .canvas { padding-bottom: env(safe-area-inset-bottom); }
+  /* Spazio in cima (safe area) e in fondo (sopra la tabbar fissa) */
+  .canvas { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 
   /* Intestazioni: azioni a capo invece di schiacciarsi accanto al titolo */
   .page-header { flex-wrap: wrap; gap: 14px; }
@@ -727,6 +731,19 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
   .list-toolbar { flex-wrap: wrap; }
   .list-toolbar-fields, .filters-bar { grid-template-columns: 1fr; width: 100%; }
   .list-toolbar-actions { width: 100%; justify-content: flex-end; }
+
+  /* Tab di Impostazioni: scroll orizzontale invece di spezzare il testo su più righe */
+  .settings-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .settings-tab { white-space: nowrap; flex-shrink: 0; }
+
+  /* Card della timeline: colonna oraria più stretta e azioni che vanno a capo sotto al
+     contenuto invece di schiacciarlo (altrimenti su schermi stretti il titolo finisce
+     coperto dai bottoni). */
+  .timeline-time-col { width: 68px; padding: 8px 4px; }
+  .timeline-time { font-size: 11px; }
+  .timeline-item-top { flex-wrap: wrap; row-gap: 8px; }
+  .timeline-item-main, .timeline-item-top > .timeline-body { flex: 1 1 140px; }
+  .timeline-actions { margin-left: auto; }
 
   /* Coppie di campi nei form: impilati invece che affiancati */
   .field-row { flex-direction: column; gap: 0; }

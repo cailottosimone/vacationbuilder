@@ -1,7 +1,22 @@
-# Vacation Builder — v23 (Impostazioni → Navigazione, PWA per iPhone, fix menu mobile)
+# Vacation Builder — v24 (fix mobile: safe-area, tab, card timeline)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
-online per natura). Ora anche installabile come PWA.
+online per natura). Installabile come PWA.
+
+## Novità v24 — fix da screenshot reali su iPhone
+
+Tutte le correzioni restano dentro il media query mobile: il CSS desktop non cambia di una riga.
+
+- **Safe-area (Dynamic Island/status bar)**: avevo attivato `viewport-fit=cover` senza il
+  padding di sicurezza corrispondente, così il contenuto in cima alla pagina finiva sotto
+  l'orologio/Dynamic Island. Aggiunto `padding-top: env(safe-area-inset-top)` al contenuto e al
+  cassetto laterale.
+- **Tab di Impostazioni**: su schermi stretti il testo di ogni tab si spezzava su più righe
+  invece di scorrere. Ora la barra dei tab scorre in orizzontale, ogni tab resta su una riga sola.
+- **Card della timeline troppo strette**: colonna oraria + immagine + fino a 3 bottoni azione non
+  ci stavano su una riga sola in ~340px di larghezza, e il titolo finiva coperto dai bottoni.
+  Colonna oraria ridotta, e i bottoni ora vanno a capo sotto al contenuto quando lo spazio non
+  basta, invece di sovrapporglisi.
 
 ## Novità v23
 
