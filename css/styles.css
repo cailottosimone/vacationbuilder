@@ -734,7 +734,7 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 
   /* Tab di Impostazioni: scroll orizzontale invece di spezzare il testo su più righe */
   .settings-tabs { overflow-x: auto; flex-wrap: nowrap; }
-  .settings-tab { white-space: nowrap; flex-shrink: 0; overflow-y: clip;}
+  .settings-tab { white-space: nowrap; flex-shrink: 0;} 
 
   /* Card della timeline: colonna oraria più stretta e azioni che vanno a capo sotto al
      contenuto invece di schiacciarlo (altrimenti su schermi stretti il titolo finisce
