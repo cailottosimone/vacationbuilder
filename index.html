@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Vacation Builder</title>
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="https://kit.fontawesome.com/75d8a5f1bd.js" crossorigin="anonymous"></script>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#0077C2" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <!-- Apple: Safari non legge ancora tutto lo standard, servono questi meta dedicati -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vacation Builder" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+</head>
+<body>
+  <div class="app-shell" id="app-shell">
+
+    <!-- RAIL: solo navigazione, niente elenchi (desktop) -->
+    <aside class="rail">
+      <div class="rail-brand">
+        <span class="rail-brand-mark"><i class="fa-solid fa-spa"></i></span>
+      </div>
+
+      <nav class="rail-nav" id="rail-nav" aria-label="Sezioni dell'archivio"><!-- popolato via JS --></nav>
+    </aside>
+
+    <!-- CANVAS: piena larghezza, gestisce da solo elenco ↔ dettaglio -->
+    <main class="canvas" id="canvas"><!-- popolato via JS --></main>
+
+    <!-- INSPECTOR: cassetto che scorre da destra per creare/modificare -->
+    <aside class="inspector" id="inspector" aria-hidden="true">
+      <div class="inspector-inner" id="inspector-inner"></div>
+    </aside>
+    <div class="inspector-scrim" id="inspector-scrim"></div>
+
+    <!-- TABBAR: solo mobile, sostituisce la rail quando lo schermo è stretto -->
+    <nav class="mobile-tabbar" id="mobile-tabbar" aria-label="Sezioni dell'archivio"></nav>
+
+  </div>
+
+  <div id="modal-root"></div>
+
+  <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').catch((err) => {
+          console.warn('Service worker non registrato:', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

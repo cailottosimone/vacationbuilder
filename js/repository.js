@@ -1,0 +1,681 @@
+import { Store } from './db.js';
+import { uuid, nowISO, timeToMinutes, parseCoordinateInput, haversineKm } from './utils.js';
+
+/* ---------------------------------------------------------------------- */
+/* Destinazioni                                                            */
+/* ---------------------------------------------------------------------- */
+
+export async function listDestinazioni() {
+  const list = await Store.getAll('destinazioni');
+  return list.sort((a, b) => a.nome.localeCompare(b.nome, 'it'));
+}
+
+export async function getDestinazione(id) {
+  return Store.get('destinazioni', id);
+}
+
+export async function createDestinazione({ nome, note = '', stato = '', regione = '', provincia = '', coordinateRaw = '', categorieIds = [], immagini = [] }) {
+  const record = {
+    id: uuid(),
+    nome: nome.trim(),
+    note: note.trim(),
+    stato: stato.trim(),
+    regione: regione.trim(),
+    provincia: provincia.trim(),
+    coordinate: parseCoordinateInput(coordinateRaw),
+    categorieIds: [...categorieIds],
+    immagini: [...immagini],
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('destinazioni', record);
+}
+
+export async function updateDestinazione(id, { nome, note, stato, regione, provincia, coordinateRaw, categorieIds, immagini }) {
+  const record = await Store.get('destinazioni', id);
+  if (!record) throw new Error('Destinazione non trovata');
+  record.nome = nome.trim();
+  record.note = (note ?? '').trim();
+  record.stato = (stato ?? '').trim();
+  record.regione = (regione ?? '').trim();
+  record.provincia = (provincia ?? '').trim();
+  record.coordinate = parseCoordinateInput(coordinateRaw ?? '');
+  record.categorieIds = categorieIds ? [...categorieIds] : record.categorieIds || [];
+  record.immagini = immagini ? [...immagini] : record.immagini || [];
+  record.updatedAt = nowISO();
+  return Store.put('destinazioni', record);
+}
+
+/** Valori distinti già in uso, per popolare i filtri a tendina con dati reali. */
+export async function getFacetsDestinazioni() {
+  const all = await Store.getAll('destinazioni');
+  const uniq = (arr) => [...new Set(arr.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'it'));
+  return {
+    stati: uniq(all.map((d) => d.stato)),
+    regioni: uniq(all.map((d) => d.regione)),
+    province: uniq(all.map((d) => d.provincia)),
+  };
+}
+
+/* ---------------------------------------------------------------------- */
+/* Categorie destinazione (gestite da Impostazioni, non esclusive)         */
+/* ---------------------------------------------------------------------- */
+
+export async function listCategorieDestinazione() {
+  const list = await Store.getAll('categorieDestinazione');
+  return list.sort((a, b) => a.ordine - b.ordine);
+}
+
+export async function getCategoriaDestinazione(id) {
+  return Store.get('categorieDestinazione', id);
+}
+
+export async function createCategoriaDestinazione({ nome }) {
+  const esistenti = await listCategorieDestinazione();
+  const record = { id: uuid(), nome: nome.trim(), ordine: esistenti.length, createdAt: nowISO(), updatedAt: nowISO() };
+  return Store.put('categorieDestinazione', record);
+}
+
+export async function updateCategoriaDestinazione(id, { nome }) {
+  const record = await Store.get('categorieDestinazione', id);
+  if (!record) throw new Error('Categoria non trovata');
+  record.nome = nome.trim();
+  record.updatedAt = nowISO();
+  return Store.put('categorieDestinazione', record);
+}
+
+export async function checkCategoriaDestinazioneUsage(id) {
+  const all = await Store.getAll('destinazioni');
+  const usate = all.filter((d) => (d.categorieIds || []).includes(id));
+  return { count: usate.length, destinazioni: usate };
+}
+
+export async function deleteCategoriaDestinazione(id) {
+  const usage = await checkCategoriaDestinazioneUsage(id);
+  if (usage.count > 0) {
+    throw new Error(`Categoria ancora usata da ${usage.count} destinazioni: riassegnale prima di eliminarla.`);
+  }
+  await Store.delete('categorieDestinazione', id);
+}
+
+/**
+ * Destinazioni entro un raggio da un punto, ordinate per distanza crescente.
+ * Ogni risultato porta con sé `distanzaKm`. Ignora le destinazioni senza coordinate.
+ */
+export async function listDestinazioniEntroDistanza(origine, maxKm) {
+  const all = await Store.getAll('destinazioni');
+  return all
+    .map((d) => ({ ...d, distanzaKm: d.coordinate ? haversineKm(origine, d.coordinate) : null }))
+    .filter((d) => d.distanzaKm != null && d.distanzaKm <= maxKm)
+    .sort((a, b) => a.distanzaKm - b.distanzaKm);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Configurazione app (record singolo, non incluso nel backup)             */
+/* ---------------------------------------------------------------------- */
+
+const CONFIG_ID = 'app';
+const NAV_NASCOSTI_DEFAULT = ['esplora']; // di default, solo Esplora parte nascosta
+
+export async function getConfig() {
+  const record = await Store.get('configurazione', CONFIG_ID);
+  if (!record) return { id: CONFIG_ID, orsApiKey: '', navNascosti: [...NAV_NASCOSTI_DEFAULT] };
+  if (record.navNascosti === undefined) record.navNascosti = [...NAV_NASCOSTI_DEFAULT];
+  return record;
+}
+
+export async function setOrsApiKey(key) {
+  const record = await getConfig();
+  record.orsApiKey = (key || '').trim();
+  return Store.put('configurazione', record);
+}
+
+/** Voci di navigazione nascoste dalla rail: "impostazioni" non può mai finirci, altrimenti
+ * non ci sarebbe più modo di tornare a mostrare le altre. */
+export async function setNavNascosti(chiavi) {
+  const record = await getConfig();
+  record.navNascosti = chiavi.filter((k) => k !== 'impostazioni');
+  return Store.put('configurazione', record);
+}
+
+/**
+ * Analizza tutto ciò che dipende da una destinazione, per mostrare
+ * un avviso chiaro prima della cancellazione a cascata.
+ */
+export async function checkDestinazioneUsage(id) {
+  const tappe = await Store.getAllByIndex('tappe', 'destinazioneId', id);
+  const tappaIds = new Set(tappe.map((t) => t.id));
+
+  const giornate = await Store.getAllByIndex('giornate', 'destinazioneId', id);
+
+  const tuttePianificate = await Store.getAll('tappePianificate');
+  const pianificateCoinvolte = tuttePianificate.filter((p) => tappaIds.has(p.tappaId) || giornate.some((g) => g.id === p.giornataId));
+
+  const vacanzeIds = new Set(giornate.map((g) => g.vacanzaId));
+  const tutteVacanze = await Store.getAll('vacanze');
+  const vacanzeFisseCollegate = tutteVacanze.filter((v) => v.tipo === 'fissa' && v.destinazionePrincipaleId === id);
+  vacanzeFisseCollegate.forEach((v) => vacanzeIds.add(v.id));
+  const vacanzeCoinvolte = tutteVacanze.filter((v) => vacanzeIds.has(v.id));
+
+  return {
+    tappeCount: tappe.length,
+    giornateCount: giornate.length,
+    pianificateCount: pianificateCoinvolte.length,
+    vacanzeCoinvolte,
+  };
+}
+
+export async function deleteDestinazioneCascade(id) {
+  const tappe = await Store.getAllByIndex('tappe', 'destinazioneId', id);
+  const tappaIds = new Set(tappe.map((t) => t.id));
+
+  const giornate = await Store.getAllByIndex('giornate', 'destinazioneId', id);
+  const giornataIds = new Set(giornate.map((g) => g.id));
+
+  const tuttePianificate = await Store.getAll('tappePianificate');
+  for (const p of tuttePianificate) {
+    if (tappaIds.has(p.tappaId) || giornataIds.has(p.giornataId)) {
+      await Store.delete('tappePianificate', p.id);
+    }
+  }
+
+  for (const g of giornate) await Store.delete('giornate', g.id);
+
+  const tutteVacanze = await Store.getAll('vacanze');
+  const vacanzeFisseCollegate = tutteVacanze.filter((v) => v.tipo === 'fissa' && v.destinazionePrincipaleId === id);
+  for (const v of vacanzeFisseCollegate) {
+    const altreGiornate = await Store.getAllByIndex('giornate', 'vacanzaId', v.id);
+    for (const g of altreGiornate) {
+      const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', g.id);
+      for (const p of pian) await Store.delete('tappePianificate', p.id);
+      await Store.delete('giornate', g.id);
+    }
+    await Store.delete('vacanze', v.id);
+  }
+
+  for (const t of tappe) await Store.delete('tappe', t.id);
+  await Store.delete('destinazioni', id);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Tappe                                                                   */
+/* ---------------------------------------------------------------------- */
+
+export async function listTappeByDestinazione(destinazioneId) {
+  const list = await Store.getAllByIndex('tappe', 'destinazioneId', destinazioneId);
+  return list.sort((a, b) => a.nome.localeCompare(b.nome, 'it'));
+}
+
+export async function getTappa(id) {
+  return Store.get('tappe', id);
+}
+
+export async function createTappa({ destinazioneId, nome, tipi, note = '', durataConsigliataMin = null, coordinateRaw = '', immagini = [] }) {
+  const record = {
+    id: uuid(),
+    destinazioneId,
+    nome: nome.trim(),
+    tipi: [...tipi], // il primo è il tipo principale: decide il raggruppamento nella pagina destinazione
+    note: note.trim(),
+    durataConsigliataMin: durataConsigliataMin || null,
+    coordinate: parseCoordinateInput(coordinateRaw),
+    immagini: [...immagini],
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('tappe', record);
+}
+
+export async function updateTappa(id, { nome, tipi, note, durataConsigliataMin, coordinateRaw, immagini }) {
+  const record = await Store.get('tappe', id);
+  if (!record) throw new Error('Tappa non trovata');
+  record.nome = nome.trim();
+  record.tipi = [...tipi];
+  record.note = (note ?? '').trim();
+  record.durataConsigliataMin = durataConsigliataMin || null;
+  record.coordinate = parseCoordinateInput(coordinateRaw ?? '');
+  record.immagini = immagini ? [...immagini] : record.immagini || [];
+  record.updatedAt = nowISO();
+  return Store.put('tappe', record);
+}
+
+export async function checkTappaUsage(id) {
+  const pianificate = await Store.getAllByIndex('tappePianificate', 'tappaId', id);
+  const giornateIds = new Set(pianificate.map((p) => p.giornataId));
+  const tutteGiornate = await Store.getAll('giornate');
+  const giornateCoinvolte = tutteGiornate.filter((g) => giornateIds.has(g.id));
+  const vacanzeIds = new Set(giornateCoinvolte.map((g) => g.vacanzaId));
+  const tutteVacanze = await Store.getAll('vacanze');
+  const vacanzeCoinvolte = tutteVacanze.filter((v) => vacanzeIds.has(v.id));
+  return { pianificateCount: pianificate.length, vacanzeCoinvolte };
+}
+
+export async function deleteTappaCascade(id) {
+  const pianificate = await Store.getAllByIndex('tappePianificate', 'tappaId', id);
+  for (const p of pianificate) await Store.delete('tappePianificate', p.id);
+  await Store.delete('tappe', id);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Tipi di tappa (gestiti da Impostazioni)                                 */
+/* ---------------------------------------------------------------------- */
+
+export async function listTipiTappa() {
+  const list = await Store.getAll('tipiTappa');
+  return list.sort((a, b) => a.ordine - b.ordine);
+}
+
+export async function getTipoTappa(id) {
+  return Store.get('tipiTappa', id);
+}
+
+export async function createTipoTappa({ nome }) {
+  const esistenti = await listTipiTappa();
+  const record = {
+    id: uuid(),
+    nome: nome.trim(),
+    ordine: esistenti.length,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('tipiTappa', record);
+}
+
+export async function updateTipoTappa(id, { nome }) {
+  const record = await Store.get('tipiTappa', id);
+  if (!record) throw new Error('Tipo non trovato');
+  record.nome = nome.trim();
+  record.updatedAt = nowISO();
+  return Store.put('tipiTappa', record);
+}
+
+/** Quante tappe usano ancora questo tipo (tra tutti i loro tipi): se >0, blocco l'eliminazione in UI. */
+export async function checkTipoTappaUsage(id) {
+  const tappe = await Store.getAllByIndex('tappe', 'tipi', id);
+  return { count: tappe.length, tappe };
+}
+
+export async function deleteTipoTappa(id) {
+  const usage = await checkTipoTappaUsage(id);
+  if (usage.count > 0) {
+    throw new Error(`Tipo ancora usato da ${usage.count} tappe: riassegnale prima di eliminarlo.`);
+  }
+  await Store.delete('tipiTappa', id);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Vacanze                                                                 */
+/* ---------------------------------------------------------------------- */
+
+export async function listVacanze() {
+  const list = await Store.getAll('vacanze');
+  return list.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+}
+
+export async function getVacanza(id) {
+  return Store.get('vacanze', id);
+}
+
+export async function createVacanza({ nome, tipo, destinazionePrincipaleId = null, dataInizio = '', dataFine = '' }) {
+  const record = {
+    id: uuid(),
+    nome: nome.trim(),
+    tipo, // 'fissa' | 'itinerante'
+    destinazionePrincipaleId: tipo === 'fissa' ? destinazionePrincipaleId : null,
+    alloggioId: null, // vacanze "fisse": un solo alloggio per tutta la vacanza
+    alloggiIds: tipo === 'itinerante' ? [] : null, // vacanze itineranti: pool di alloggi tra cui scegliere giorno per giorno
+    dataInizio,
+    dataFine,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  const saved = await Store.put('vacanze', record);
+  if (tipo === 'fissa' && destinazionePrincipaleId) {
+    await addGiornata(saved.id, destinazionePrincipaleId);
+  }
+  return saved;
+}
+
+export async function updateVacanza(id, { nome, dataInizio, dataFine }) {
+  const record = await Store.get('vacanze', id);
+  if (!record) throw new Error('Vacanza non trovata');
+  record.nome = nome.trim();
+  record.dataInizio = dataInizio ?? record.dataInizio;
+  record.dataFine = dataFine ?? record.dataFine;
+  record.updatedAt = nowISO();
+  return Store.put('vacanze', record);
+}
+
+/** Alloggio unico per una vacanza "fissa" (un luogo). */
+export async function setVacanzaAlloggio(vacanzaId, tappaId) {
+  const record = await Store.get('vacanze', vacanzaId);
+  if (!record) throw new Error('Vacanza non trovata');
+  record.alloggioId = tappaId || null;
+  record.updatedAt = nowISO();
+  return Store.put('vacanze', record);
+}
+
+/** Pool di alloggi tra cui scegliere giorno per giorno in una vacanza itinerante. */
+export async function addAlloggioToVacanza(vacanzaId, tappaId) {
+  const record = await Store.get('vacanze', vacanzaId);
+  if (!record) throw new Error('Vacanza non trovata');
+  const set = new Set(record.alloggiIds || []);
+  set.add(tappaId);
+  record.alloggiIds = [...set];
+  record.updatedAt = nowISO();
+  return Store.put('vacanze', record);
+}
+
+export async function removeAlloggioFromVacanza(vacanzaId, tappaId) {
+  const record = await Store.get('vacanze', vacanzaId);
+  if (!record) throw new Error('Vacanza non trovata');
+  record.alloggiIds = (record.alloggiIds || []).filter((id) => id !== tappaId);
+  record.updatedAt = nowISO();
+  // se qualche giornata aveva questo alloggio selezionato, lo azzeriamo
+  const giornate = await listGiornateByVacanza(vacanzaId);
+  for (const g of giornate) {
+    if (g.alloggioId === tappaId) {
+      g.alloggioId = null;
+      g.updatedAt = nowISO();
+      await Store.put('giornate', g);
+    }
+  }
+  return Store.put('vacanze', record);
+}
+
+/** Tutte le tappe di tipo "alloggio" nell'archivio, indipendentemente dalla destinazione. */
+/** Tappe che hanno "alloggio" tra i loro tipi, anche se non è il tipo principale (es. un rifugio Ristoro + Alloggio). */
+export async function listTappeAlloggio() {
+  return Store.getAllByIndex('tappe', 'tipi', 'alloggio');
+}
+
+export async function deleteVacanza(id) {
+  const giornate = await Store.getAllByIndex('giornate', 'vacanzaId', id);
+  for (const g of giornate) {
+    const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', g.id);
+    for (const p of pian) await Store.delete('tappePianificate', p.id);
+    await Store.delete('giornate', g.id);
+  }
+  await Store.delete('vacanze', id);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Giornate                                                                */
+/* ---------------------------------------------------------------------- */
+
+export async function getGiornata(id) {
+  return Store.get('giornate', id);
+}
+
+export async function listGiornateByVacanza(vacanzaId) {
+  const list = await Store.getAllByIndex('giornate', 'vacanzaId', vacanzaId);
+  return list.sort((a, b) => a.ordine - b.ordine);
+}
+
+/** Id delle destinazioni distinte che compaiono nelle giornate di una vacanza (per i filtri). */
+export async function listDestinazioneIdsUsateByVacanza(vacanzaId) {
+  const giornate = await listGiornateByVacanza(vacanzaId);
+  return [...new Set(giornate.map((g) => g.destinazioneId).filter(Boolean))];
+}
+
+export async function addGiornata(vacanzaId, destinazioneId) {
+  const esistenti = await listGiornateByVacanza(vacanzaId);
+  const record = {
+    id: uuid(),
+    vacanzaId,
+    ordine: esistenti.length,
+    data: '',
+    destinazioneId,
+    alloggioId: null, // solo per vacanze itineranti: scelto tra il pool alloggiIds della vacanza
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  const saved = await Store.put('giornate', record);
+  const vacanza = await Store.get('vacanze', vacanzaId);
+  vacanza.updatedAt = nowISO();
+  await Store.put('vacanze', vacanza);
+  return saved;
+}
+
+/** Alloggio del giorno (solo vacanze itineranti): deve appartenere al pool alloggiIds della vacanza. */
+export async function setGiornataAlloggio(giornataId, tappaId) {
+  const giornata = await Store.get('giornate', giornataId);
+  if (!giornata) throw new Error('Giornata non trovata');
+  giornata.alloggioId = tappaId || null;
+  giornata.updatedAt = nowISO();
+  return Store.put('giornate', giornata);
+}
+
+/** Cambia la destinazione di UNA giornata: consentito solo se la vacanza è itinerante. */
+export async function updateGiornataDestinazione(giornataId, destinazioneId) {
+  const giornata = await Store.get('giornate', giornataId);
+  if (!giornata) throw new Error('Giornata non trovata');
+  const vacanza = await Store.get('vacanze', giornata.vacanzaId);
+  if (vacanza.tipo === 'fissa') {
+    throw new Error('In una vacanza "un luogo" la destinazione è fissa per tutte le giornate');
+  }
+  giornata.destinazioneId = destinazioneId;
+  giornata.updatedAt = nowISO();
+
+  // Le tappe pianificate della vecchia destinazione non hanno più senso: le rimuoviamo,
+  // ma l'avviso all'utente viene mostrato in UI prima di chiamare questa funzione.
+  const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  for (const p of pian) await Store.delete('tappePianificate', p.id);
+
+  return Store.put('giornate', giornata);
+}
+
+export async function updateGiornataData(giornataId, data) {
+  const giornata = await Store.get('giornate', giornataId);
+  giornata.data = data;
+  giornata.updatedAt = nowISO();
+  return Store.put('giornate', giornata);
+}
+
+export async function deleteGiornata(giornataId) {
+  const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  for (const p of pian) await Store.delete('tappePianificate', p.id);
+  const giornata = await Store.get('giornate', giornataId);
+  await Store.delete('giornate', giornataId);
+  // riordina le giornate rimanenti
+  const restanti = await listGiornateByVacanza(giornata.vacanzaId);
+  for (let i = 0; i < restanti.length; i++) {
+    restanti[i].ordine = i;
+    await Store.put('giornate', restanti[i]);
+  }
+}
+
+export async function reorderGiornate(vacanzaId, orderedIds) {
+  const giornate = await listGiornateByVacanza(vacanzaId);
+  const byId = new Map(giornate.map((g) => [g.id, g]));
+  for (let i = 0; i < orderedIds.length; i++) {
+    const g = byId.get(orderedIds[i]);
+    if (!g) continue;
+    g.ordine = i;
+    await Store.put('giornate', g);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Voci di giornata: tappa / partenza / rientro / spostamento              */
+/* Restano fisicamente nello store "tappePianificate" per continuità dei   */
+/* dati; il campo tipoVoce distingue il tipo di voce.                      */
+/* ---------------------------------------------------------------------- */
+
+export async function getVoce(id) {
+  return Store.get('tappePianificate', id);
+}
+
+/** Assegna un `ordine` a eventuali voci "vecchie" (create prima dell'introduzione del
+ * riordino manuale), basandosi sull'orario che avevano, così il drag & drop può partire
+ * da uno stato coerente anche su archivi già esistenti. */
+async function ensureOrdine(giornataId) {
+  const all = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  const senzaOrdine = all.filter((v) => v.ordine == null);
+  if (!senzaOrdine.length) return;
+  const conOrario = all
+    .map((v) => ({ v, t: timeToMinutes(v.oraInizio || v.ora) ?? 999999 }))
+    .sort((a, b) => a.t - b.t);
+  for (let i = 0; i < conOrario.length; i++) {
+    if (conOrario[i].v.ordine == null) {
+      conOrario[i].v.ordine = i;
+      await Store.put('tappePianificate', conOrario[i].v);
+    }
+  }
+}
+
+/** Converte le vecchie voci con orario fisso (oraInizio/oraFine) nel nuovo modello a durata
+ * (permanenza per le tappe, durata per gli spostamenti): l'orario diventa la loro durata,
+ * così da giornate già pianificate non si perde nulla passando alla nuova versione. Il Rientro,
+ * che prima aveva un orario fisso obbligatorio, passa a orario calcolato: quello che avevi
+ * scritto diventa un oraFissata (un override esplicito), preservando la tua scelta originale. */
+async function ensureDurate(giornataId) {
+  const all = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  for (const v of all) {
+    if (v.tipoVoce === 'tappa' && v.permanenzaMin == null) {
+      const start = timeToMinutes(v.oraInizio);
+      const end = timeToMinutes(v.oraFine);
+      v.permanenzaMin = start != null && end != null && end > start ? end - start : 60;
+      if (v.oraFissata === undefined) v.oraFissata = null;
+      await Store.put('tappePianificate', v);
+    } else if (v.tipoVoce === 'spostamento' && v.durataMin === undefined) {
+      const start = timeToMinutes(v.oraInizio);
+      const end = timeToMinutes(v.oraFine);
+      v.durataMin = start != null && end != null && end > start ? end - start : null;
+      if (v.oraFissata === undefined) v.oraFissata = null;
+      await Store.put('tappePianificate', v);
+    } else if (v.tipoVoce === 'rientro' && v.oraFissata === undefined) {
+      v.oraFissata = v.ora || null;
+      await Store.put('tappePianificate', v);
+    }
+  }
+}
+
+export async function listVociByGiornata(giornataId) {
+  await ensureOrdine(giornataId);
+  await ensureDurate(giornataId);
+  const list = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  return list.sort((a, b) => (a.ordine ?? 0) - (b.ordine ?? 0));
+}
+
+/**
+ * Calcola l'ordine da assegnare a una nuova voce: in fondo (append) se atIndex non è
+ * specificato, oppure esattamente alla posizione atIndex, "spostando giù" di uno slot
+ * tutte le voci successive per fare spazio. atIndex è l'indice del "varco" tra due card
+ * (0 = prima di tutte, length = dopo l'ultima).
+ */
+async function reserveOrdine(giornataId, atIndex = null) {
+  const esistenti = await listVociByGiornata(giornataId); // già ordinate, ordine garantito
+  if (atIndex == null) return esistenti.length;
+  const clamped = Math.max(0, Math.min(atIndex, esistenti.length));
+  for (let i = 0; i < esistenti.length; i++) {
+    const targetOrdine = i >= clamped ? i + 1 : i;
+    if (esistenti[i].ordine !== targetOrdine) {
+      esistenti[i].ordine = targetOrdine;
+      await Store.put('tappePianificate', esistenti[i]);
+    }
+  }
+  return clamped;
+}
+
+/** Tappa: niente più orario fisso, solo permanenza (minuti). L'inizio si calcola da solo
+ * sommando le durate dall'ultima Partenza/Rientro, salvo che tu non imposti un orario fisso
+ * per questa voce specifica (oraFissata). */
+export async function addVoceTappa({ giornataId, tappaId, permanenzaMin, oraFissata = null, note = '', atIndex = null }) {
+  const record = {
+    id: uuid(),
+    giornataId,
+    tipoVoce: 'tappa',
+    ordine: await reserveOrdine(giornataId, atIndex),
+    tappaId,
+    permanenzaMin,
+    oraFissata,
+    note: note.trim(),
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('tappePianificate', record);
+}
+
+export async function addVocePartenza({ giornataId, ora, daRifTappaId = null, note = '', atIndex = null }) {
+  const record = {
+    id: uuid(),
+    giornataId,
+    tipoVoce: 'partenza',
+    ordine: await reserveOrdine(giornataId, atIndex),
+    ora,
+    daRifTappaId,
+    note: note.trim(),
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('tappePianificate', record);
+}
+
+/** Rientro: trattato come una Tappa "di passaggio" (permanenza implicita 0) — il suo orario si
+ * calcola da solo sommando le durate di quel che viene prima, salvo che tu non imposti
+ * un'ancora esplicita con oraFissata. */
+export async function addVoceRientro({ giornataId, aRifTappaId = null, oraFissata = null, note = '', atIndex = null }) {
+  const record = {
+    id: uuid(),
+    giornataId,
+    tipoVoce: 'rientro',
+    ordine: await reserveOrdine(giornataId, atIndex),
+    aRifTappaId,
+    oraFissata,
+    note: note.trim(),
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('tappePianificate', record);
+}
+
+/**
+ * Spostamento: nasce senza durata esplicita. Se calcoli la distanza reale, la durata di quel
+ * calcolo (durataRealeMin) fa da default; puoi comunque fissarne una a mano (durataMin), che ha
+ * sempre la priorità. oraFissata, come per la Tappa, fa da ancora opzionale per questa voce.
+ */
+export async function addVoceSpostamento({ giornataId, mezzo, daRifTappaId = null, aRifTappaId = null, note = '', atIndex = null, distanzaRealeKm = null, durataRealeMin = null, durataMin = null, oraFissata = null }) {
+  const record = {
+    id: uuid(),
+    giornataId,
+    tipoVoce: 'spostamento',
+    ordine: await reserveOrdine(giornataId, atIndex),
+    mezzo,
+    daRifTappaId,
+    aRifTappaId,
+    distanzaRealeKm,
+    durataRealeMin,
+    durataMin,
+    oraFissata,
+    note: note.trim(),
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+  };
+  return Store.put('tappePianificate', record);
+}
+
+/** Aggiornamento generico: applica solo i campi passati, qualunque sia il tipoVoce. */
+export async function updateVoce(id, patch) {
+  const record = await Store.get('tappePianificate', id);
+  if (!record) throw new Error('Voce non trovata');
+  Object.assign(record, patch);
+  if (typeof record.note === 'string') record.note = record.note.trim();
+  record.updatedAt = nowISO();
+  return Store.put('tappePianificate', record);
+}
+
+export async function deleteVoce(id) {
+  await Store.delete('tappePianificate', id);
+}
+
+export async function reorderVoci(giornataId, orderedIds) {
+  const list = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  const byId = new Map(list.map((v) => [v.id, v]));
+  for (let i = 0; i < orderedIds.length; i++) {
+    const v = byId.get(orderedIds[i]);
+    if (!v) continue;
+    v.ordine = i;
+    await Store.put('tappePianificate', v);
+  }
+}
