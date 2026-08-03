@@ -3,7 +3,7 @@
 // qui dentro con un version bump e basta: nessuno store esistente viene toccato.
 
 const DB_NAME = 'vacation-builder-db';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 // Seed dei tipi di tappa di default: solo la prima volta che lo store viene creato.
 // L'utente potrà rinominarli, ricolorarli, aggiungerne altri o eliminarli da Impostazioni.
@@ -15,6 +15,15 @@ const DEFAULT_TIPI_TAPPA = [
   { id: 'attivita', nome: 'Attività' },
   { id: 'alloggio', nome: 'Alloggio' },
   { id: 'trasporto', nome: 'Trasporto' },
+];
+
+// Idem per le categorie di spesa: seed di partenza, tutto modificabile da Impostazioni.
+const DEFAULT_CATEGORIE_SPESA = [
+  { id: 'alloggio', nome: 'Alloggio' },
+  { id: 'trasporto', nome: 'Trasporto' },
+  { id: 'cibo', nome: 'Cibo' },
+  { id: 'attivita', nome: 'Attività' },
+  { id: 'altro', nome: 'Altro' },
 ];
 
 /** @type {IDBDatabase|null} */
@@ -75,6 +84,28 @@ function openDB() {
 
       if (!db.objectStoreNames.contains('configurazione')) {
         db.createObjectStore('configurazione', { keyPath: 'id' });
+      }
+
+      if (!db.objectStoreNames.contains('categorieSpesa')) {
+        const store = db.createObjectStore('categorieSpesa', { keyPath: 'id' });
+        store.createIndex('nome', 'nome', { unique: false });
+        const now = new Date().toISOString();
+        DEFAULT_CATEGORIE_SPESA.forEach((c, i) => {
+          store.put({ ...c, ordine: i, createdAt: now, updatedAt: now });
+        });
+      }
+
+      if (!db.objectStoreNames.contains('spese')) {
+        const store = db.createObjectStore('spese', { keyPath: 'id' });
+        store.createIndex('vacanzaId', 'vacanzaId', { unique: false });
+        store.createIndex('voceId', 'voceId', { unique: false });
+        store.createIndex('categoriaId', 'categoriaId', { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains('listaVoci')) {
+        const store = db.createObjectStore('listaVoci', { keyPath: 'id' });
+        store.createIndex('vacanzaId', 'vacanzaId', { unique: false });
+        store.createIndex('giornataId', 'giornataId', { unique: false });
       }
 
       // Migrazione v5: una Tappa può avere più tipi (es. un rifugio è Ristoro + Alloggio).
@@ -167,7 +198,7 @@ export const Store = {
 
   /** Esporta l'intero database come oggetto semplice, per il backup JSON. */
   async exportAll() {
-    const storeNames = ['destinazioni', 'tappe', 'vacanze', 'giornate', 'tappePianificate', 'tipiTappa', 'categorieDestinazione'];
+    const storeNames = ['destinazioni', 'tappe', 'vacanze', 'giornate', 'tappePianificate', 'tipiTappa', 'categorieDestinazione', 'categorieSpesa', 'spese', 'listaVoci'];
     const out = { schemaVersion: DB_VERSION, exportedAt: new Date().toISOString() };
     for (const name of storeNames) {
       out[name] = await Store.getAll(name);
@@ -177,7 +208,7 @@ export const Store = {
 
   /** Importa un export JSON, sovrascrivendo i record con lo stesso id. */
   async importAll(data) {
-    const storeNames = ['destinazioni', 'tappe', 'vacanze', 'giornate', 'tappePianificate', 'tipiTappa', 'categorieDestinazione'];
+    const storeNames = ['destinazioni', 'tappe', 'vacanze', 'giornate', 'tappePianificate', 'tipiTappa', 'categorieDestinazione', 'categorieSpesa', 'spese', 'listaVoci'];
     const db = await openDB();
     const t = db.transaction(storeNames, 'readwrite');
     for (const name of storeNames) {
@@ -192,7 +223,7 @@ export const Store = {
   },
 
   async wipeAll() {
-    const storeNames = ['destinazioni', 'tappe', 'vacanze', 'giornate', 'tappePianificate', 'tipiTappa', 'categorieDestinazione'];
+    const storeNames = ['destinazioni', 'tappe', 'vacanze', 'giornate', 'tappePianificate', 'tipiTappa', 'categorieDestinazione', 'categorieSpesa', 'spese', 'listaVoci'];
     const db = await openDB();
     const t = db.transaction(storeNames, 'readwrite');
     for (const name of storeNames) t.objectStore(name).clear();

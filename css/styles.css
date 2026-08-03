@@ -92,7 +92,7 @@ a { color: var(--blue); }
 /* CANVAS — piena larghezza                                                */
 /* ---------------------------------------------------------------------- */
 
-.canvas { height: 100vh; overflow-y: auto; background: var(--bg); }
+.canvas { height: 100vh; overflow-y: auto; overflow-x: hidden; background: var(--bg); }
 
 .page { max-width: 1440px; margin: 0 auto; padding: 40px 48px 90px; }
 .page-wide { max-width: none; }
@@ -233,6 +233,7 @@ a { color: var(--blue); }
   border: 1px solid var(--border);
   border-radius: var(--radius-m);
   text-align: left;
+  min-width: 0;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .item-row:hover { border-color: var(--blue); box-shadow: var(--shadow-sm); }
@@ -242,9 +243,13 @@ a { color: var(--blue); }
   background: linear-gradient(135deg, var(--blue-soft), var(--blue));
   display: flex; align-items: center; justify-content: center; color: var(--blue); font-size: 15px;
 }
-.item-row-title { font-size: 15px; font-weight: 700; color: var(--text); flex: 1; min-width: 120px; }
-.item-row-meta { font-size: 12.5px; color: var(--text-faint); }
-.item-row-badges { display: flex; gap: 6px; flex-shrink: 0; }
+.item-row-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  flex: 1 1 120px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.item-row-meta { font-size: 12.5px; color: var(--text-faint); flex-shrink: 0; }
+.item-row-badges { display: flex; gap: 6px; flex-shrink: 1; min-width: 0; max-width: 40%; overflow-x: auto; }
 .item-row-chevron { color: var(--text-faint); font-size: 14px; flex-shrink: 0; }
 
 .empty-list-note {
@@ -734,7 +739,7 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 
   /* Tab di Impostazioni: scroll orizzontale invece di spezzare il testo su più righe */
   .settings-tabs { overflow-x: auto; flex-wrap: nowrap; }
-  .settings-tab { white-space: nowrap; flex-shrink: 0;} 
+  .settings-tab { white-space: nowrap; flex-shrink: 0; }
 
   /* Card della timeline: colonna oraria più stretta e azioni che vanno a capo sotto al
      contenuto invece di schiacciarlo (altrimenti su schermi stretti il titolo finisce
@@ -748,6 +753,105 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
   /* Coppie di campi nei form: impilati invece che affiancati */
   .field-row { flex-direction: column; gap: 0; }
 
+  /* Riepilogo budget: piena larghezza invece di restare stretto a destra */
+  .budget-riepilogo { max-width: none; }
+
   /* Card giorno/timeline: meno margini laterali già coperti da .page, ok così */
   .giorni-row { padding-bottom: 10px; }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Sotto-tab della pagina Vacanza (Programma / Budget / Lista)             */
+/* ---------------------------------------------------------------------- */
+
+.vacanza-subtabs { margin-top: 22px; }
+
+/* ---------------------------------------------------------------------- */
+/* Budget                                                                  */
+/* ---------------------------------------------------------------------- */
+
+.settings-td-sub { font-size: 11px; color: var(--text-faint); font-weight: 500; margin-top: 2px; }
+
+.budget-table { table-layout: auto; }
+.budget-table td, .budget-table th { white-space: nowrap; }
+.settings-table-wrap { overflow-x: auto; }
+
+.budget-segue { color: var(--text-faint); font-weight: 500; font-style: italic; }
+
+.budget-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; background: var(--blue-soft); color: var(--blue-dark); white-space: nowrap;
+}
+.budget-badge.is-extra { background: var(--surface-soft); color: var(--text-faint); }
+
+.budget-riepilogo {
+  margin-top: 20px; max-width: 420px; margin-left: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m);
+  padding: 16px 20px;
+}
+.budget-riepilogo-riga { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; font-size: 13.5px; }
+.budget-riepilogo-riga strong { font-family: var(--font-mono); }
+.budget-riepilogo-sub { padding-top: 0; margin-top: -4px; font-size: 12px; color: var(--text-faint); }
+.budget-riepilogo-totale { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 12px; font-weight: 700; font-size: 15px; }
+
+/* ---------------------------------------------------------------------- */
+/* Lista (valigia / cose da fare)                                          */
+/* ---------------------------------------------------------------------- */
+
+.lista-day-picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.lista-day-btn {
+  font-size: 12.5px; font-weight: 700; padding: 8px 16px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-soft);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.lista-day-btn:hover { border-color: var(--blue); }
+.lista-day-btn.is-active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+.lista-voci { display: flex; flex-direction: column; gap: 8px; }
+.lista-voce {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m);
+}
+.lista-voce.is-fatto { opacity: 0.55; }
+.lista-voce.is-fatto .lista-voce-check span { text-decoration: line-through; }
+.lista-voce-check { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; font-size: 14px; font-weight: 600; cursor: pointer; }
+.lista-voce-check input { width: 17px; height: 17px; accent-color: var(--blue); flex-shrink: 0; }
+.lista-voce-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista-voce-costo { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--blue-dark); white-space: nowrap; }
+.lista-voce-costo.is-escluso { color: var(--text-faint); font-weight: 500; }
+.lista-voce-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* ---------------------------------------------------------------------- */
+/* Stampa / PDF                                                            */
+/* ---------------------------------------------------------------------- */
+
+#print-area { display: none; }
+
+@media print {
+  html, body { overflow: visible !important; height: auto !important; }
+
+  /* Nasconde tutto tranne l'area stampabile, ovunque si trovi nel DOM. */
+  body * { visibility: hidden; }
+  #print-area, #print-area * { visibility: visible; }
+  #print-area {
+    display: block;
+    position: absolute;
+    left: 0; top: 0; width: 100%;
+  }
+
+  .print-page { padding: 0 8mm; font-family: var(--font-body); color: #111; }
+  .print-title { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+  .print-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 10px; border: 1px solid #999; border-radius: 20px; margin-top: 4px; }
+  .print-recap { margin: 16px 0 24px; padding: 14px 0; border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; font-size: 13px; line-height: 1.7; }
+  .print-recap div { margin-bottom: 2px; }
+  .print-giorno { margin-bottom: 22px; page-break-inside: avoid; }
+  .print-giorno-titolo { font-size: 16px; font-weight: 800; border-bottom: 2px solid #111; padding-bottom: 4px; margin-bottom: 10px; }
+  .print-voce { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px dotted #ccc; font-size: 12.5px; }
+  .print-voce-ora { width: 70px; flex-shrink: 0; font-weight: 700; }
+  .print-voce-corpo { flex: 1; }
+  .print-voce-titolo { font-weight: 700; }
+  .print-voce-meta { color: #555; font-size: 11.5px; margin-top: 1px; }
+  .print-voce-note { color: #555; font-size: 11.5px; margin-top: 2px; font-style: italic; }
+  .print-footer { margin-top: 30px; font-size: 10px; color: #888; text-align: center; }
+}
+

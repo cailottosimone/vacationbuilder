@@ -22,7 +22,9 @@ const state = {
   selectedGiornataId: null,
   activeTipoFilter: new Set(),
   destinazioniListView: 'griglia', // 'griglia' | 'righe' — solo per la sessione
-  impostazioniTab: 'categorie', // 'categorie' | 'tipi' | 'routing'
+  impostazioniTab: 'categorie', // 'categorie' | 'tipi' | 'categorieSpesa' | 'routing' | 'navigazione'
+  vacanzaTab: 'programma', // 'programma' | 'budget' | 'lista'
+  listaGiornoSelezionato: null, // null = lista generale della vacanza
   vacanzeListView: 'griglia',
   filters: {
     destinazioni: { nome: '', stato: '', regione: '', provincia: '', categorieIds: [] },
@@ -677,72 +679,95 @@ async function renderCanvasVacanze() {
     </div>`;
   }
 
-  /* --- Tab dei giorni, trascinabili --- */
-  const giorniTabs = await Promise.all(
-    giornate.map(async (g, i) => {
-      const nome = await destName(g.destinazioneId);
-      const active = g.id === state.selectedGiornataId ? 'is-active' : '';
-      const alloggioNome = vacanza.tipo === 'itinerante' && g.alloggioId ? await tappaNome(g.alloggioId) : null;
-      return `<div class="giorno-tab ${active}" draggable="true" data-id="${g.id}" data-action="select-giorno">
-        <button class="card-delete" data-action="delete-giorno" data-id="${g.id}" title="Elimina giorno"><i class="fa-solid fa-trash-can"></i></button>
-        <div class="giorno-tab-label">Giorno ${i + 1}${alloggioNome ? `<span class="giorno-tab-alloggio"> – ${escapeHtml(alloggioNome)}</span>` : ''}</div>
-        ${g.data ? `<div class="giorno-tab-date">${formatDate(g.data)}</div>` : ''}
-        <div class="stamp"><span class="stamp-dot"></span>${escapeHtml(nome)}</div>
-      </div>`;
-    })
-  );
+  const vTab = state.vacanzaTab || 'programma';
+  const subTabsHtml = `<div class="settings-tabs vacanza-subtabs">
+    <button class="settings-tab ${vTab === 'programma' ? 'is-active' : ''}" data-action="set-vacanza-tab" data-tab="programma">Programma</button>
+    <button class="settings-tab ${vTab === 'budget' ? 'is-active' : ''}" data-action="set-vacanza-tab" data-tab="budget">Budget</button>
+    <button class="settings-tab ${vTab === 'lista' ? 'is-active' : ''}" data-action="set-vacanza-tab" data-tab="lista">Lista</button>
+  </div>`;
 
-  let timelineHtml = `<div class="timeline-empty">Nessuna giornata ancora. Aggiungine una per iniziare a pianificare.</div>`;
-  let toolbarHtml = '';
-  const giornoCorrente = giornate.find((g) => g.id === state.selectedGiornataId);
+  let tabContentHtml = '';
 
-  if (giornoCorrente) {
-    const vociGrezze = await repo.listVociByGiornata(giornoCorrente.id);
-    const voci = computeOrariVoci(vociGrezze);
-    const nomeDestGiorno = await destName(giornoCorrente.destinazioneId);
+  if (vTab === 'programma') {
+    /* --- Tab dei giorni, trascinabili --- */
+    const giorniTabs = await Promise.all(
+      giornate.map(async (g, i) => {
+        const nome = await destName(g.destinazioneId);
+        const active = g.id === state.selectedGiornataId ? 'is-active' : '';
+        const alloggioNome = vacanza.tipo === 'itinerante' && g.alloggioId ? await tappaNome(g.alloggioId) : null;
+        return `<div class="giorno-tab ${active}" draggable="true" data-id="${g.id}" data-action="select-giorno">
+          <button class="card-delete" data-action="delete-giorno" data-id="${g.id}" title="Elimina giorno"><i class="fa-solid fa-trash-can"></i></button>
+          <div class="giorno-tab-label">Giorno ${i + 1}${alloggioNome ? `<span class="giorno-tab-alloggio"> – ${escapeHtml(alloggioNome)}</span>` : ''}</div>
+          ${g.data ? `<div class="giorno-tab-date">${formatDate(g.data)}</div>` : ''}
+          <div class="stamp"><span class="stamp-dot"></span>${escapeHtml(nome)}</div>
+        </div>`;
+      })
+    );
 
-    const cambioDestBtn =
-      vacanza.tipo === 'itinerante'
-        ? `<button class="btn btn-sm btn-ghost" data-action="change-giorno-destinazione" data-id="${giornoCorrente.id}">Cambia destinazione</button>`
-        : '';
-    let alloggioGiornoBtn = '';
-    if (vacanza.tipo === 'itinerante' && (vacanza.alloggiIds || []).length) {
-      const nome = giornoCorrente.alloggioId ? await tappaNome(giornoCorrente.alloggioId) : null;
-      alloggioGiornoBtn = `<button class="btn btn-sm btn-ghost" data-action="set-alloggio-giorno" data-id="${giornoCorrente.id}">${nome ? `Alloggio: ${escapeHtml(nome)}` : 'Imposta alloggio del giorno'}</button>`;
-    }
-    toolbarHtml = cambioDestBtn || alloggioGiornoBtn ? `<div class="giorno-toolbar">${cambioDestBtn}${alloggioGiornoBtn}</div>` : '';
+    let timelineHtml = `<div class="timeline-empty">Nessuna giornata ancora. Aggiungine una per iniziare a pianificare.</div>`;
+    let toolbarHtml = '';
+    const giornoCorrente = giornate.find((g) => g.id === state.selectedGiornataId);
 
-    const gapHtml = (gapIndex) => `<div class="timeline-gap" data-gap-index="${gapIndex}">
-      <button class="gap-plus" data-action="toggle-gap" data-gap-index="${gapIndex}" title="Inserisci qui"><i class="fa-solid fa-plus"></i></button>
-      <div class="gap-menu">
-        <button data-action="insert-voce" data-voce-tipo="tappa" data-gap-index="${gapIndex}">Tappa</button>
-        <button data-action="insert-voce" data-voce-tipo="partenza" data-gap-index="${gapIndex}">Partenza</button>
-        <button data-action="insert-voce" data-voce-tipo="rientro" data-gap-index="${gapIndex}">Rientro</button>
-        <button data-action="insert-voce" data-voce-tipo="spostamento" data-gap-index="${gapIndex}">Spostamento</button>
-      </div>
-    </div>`;
+    if (giornoCorrente) {
+      const vociGrezze = await repo.listVociByGiornata(giornoCorrente.id);
+      const voci = computeOrariVoci(vociGrezze);
+      const nomeDestGiorno = await destName(giornoCorrente.destinazioneId);
 
-    if (!voci.length) {
-      timelineHtml = `<div class="timeline timeline-vuota">
-        <div class="timeline-gap is-empty-state" data-gap-index="0">
-          <button class="gap-plus" data-action="toggle-gap" data-gap-index="0" title="Aggiungi la prima voce"><i class="fa-solid fa-plus"></i></button>
-          <span class="timeline-gap-label">Aggiungi la prima voce del giorno · tappe disponibili solo da <strong>${escapeHtml(nomeDestGiorno)}</strong></span>
-          <div class="gap-menu">
-            <button data-action="insert-voce" data-voce-tipo="tappa" data-gap-index="0">Tappa</button>
-            <button data-action="insert-voce" data-voce-tipo="partenza" data-gap-index="0">Partenza</button>
-            <button data-action="insert-voce" data-voce-tipo="rientro" data-gap-index="0">Rientro</button>
-            <button data-action="insert-voce" data-voce-tipo="spostamento" data-gap-index="0">Spostamento</button>
-          </div>
+      const cambioDestBtn =
+        vacanza.tipo === 'itinerante'
+          ? `<button class="btn btn-sm btn-ghost" data-action="change-giorno-destinazione" data-id="${giornoCorrente.id}">Cambia destinazione</button>`
+          : '';
+      let alloggioGiornoBtn = '';
+      if (vacanza.tipo === 'itinerante' && (vacanza.alloggiIds || []).length) {
+        const nome = giornoCorrente.alloggioId ? await tappaNome(giornoCorrente.alloggioId) : null;
+        alloggioGiornoBtn = `<button class="btn btn-sm btn-ghost" data-action="set-alloggio-giorno" data-id="${giornoCorrente.id}">${nome ? `Alloggio: ${escapeHtml(nome)}` : 'Imposta alloggio del giorno'}</button>`;
+      }
+      toolbarHtml = cambioDestBtn || alloggioGiornoBtn ? `<div class="giorno-toolbar">${cambioDestBtn}${alloggioGiornoBtn}</div>` : '';
+
+      const gapHtml = (gapIndex) => `<div class="timeline-gap" data-gap-index="${gapIndex}">
+        <button class="gap-plus" data-action="toggle-gap" data-gap-index="${gapIndex}" title="Inserisci qui"><i class="fa-solid fa-plus"></i></button>
+        <div class="gap-menu">
+          <button data-action="insert-voce" data-voce-tipo="tappa" data-gap-index="${gapIndex}">Tappa</button>
+          <button data-action="insert-voce" data-voce-tipo="partenza" data-gap-index="${gapIndex}">Partenza</button>
+          <button data-action="insert-voce" data-voce-tipo="rientro" data-gap-index="${gapIndex}">Rientro</button>
+          <button data-action="insert-voce" data-voce-tipo="spostamento" data-gap-index="${gapIndex}">Spostamento</button>
         </div>
       </div>`;
-    } else {
-      const parts = [gapHtml(0)];
-      for (let i = 0; i < voci.length; i++) {
-        parts.push(await renderVoceHtml(voci[i], i, voci, vacanza, giornoCorrente, tipiById, tappaNome));
-        parts.push(gapHtml(i + 1));
+
+      if (!voci.length) {
+        timelineHtml = `<div class="timeline timeline-vuota">
+          <div class="timeline-gap is-empty-state" data-gap-index="0">
+            <button class="gap-plus" data-action="toggle-gap" data-gap-index="0" title="Aggiungi la prima voce"><i class="fa-solid fa-plus"></i></button>
+            <span class="timeline-gap-label">Aggiungi la prima voce del giorno · tappe disponibili solo da <strong>${escapeHtml(nomeDestGiorno)}</strong></span>
+            <div class="gap-menu">
+              <button data-action="insert-voce" data-voce-tipo="tappa" data-gap-index="0">Tappa</button>
+              <button data-action="insert-voce" data-voce-tipo="partenza" data-gap-index="0">Partenza</button>
+              <button data-action="insert-voce" data-voce-tipo="rientro" data-gap-index="0">Rientro</button>
+              <button data-action="insert-voce" data-voce-tipo="spostamento" data-gap-index="0">Spostamento</button>
+            </div>
+          </div>
+        </div>`;
+      } else {
+        const parts = [gapHtml(0)];
+        for (let i = 0; i < voci.length; i++) {
+          parts.push(await renderVoceHtml(voci[i], i, voci, vacanza, giornoCorrente, tipiById, tappaNome));
+          parts.push(gapHtml(i + 1));
+        }
+        timelineHtml = `<div class="timeline">${parts.join('')}</div>`;
       }
-      timelineHtml = `<div class="timeline">${parts.join('')}</div>`;
     }
+
+    tabContentHtml = `
+      <div class="giorni-row">
+        ${giorniTabs.join('')}
+        <button class="giorno-add-tab" data-action="add-giorno" title="Aggiungi giorno"><i class="fa-solid fa-plus"></i></button>
+      </div>
+      ${toolbarHtml}
+      ${timelineHtml}`;
+  } else if (vTab === 'budget') {
+    tabContentHtml = await renderBudgetTabHtml(vacanza);
+  } else {
+    tabContentHtml = await renderListaTabHtml(vacanza, giornate);
   }
 
   canvas.innerHTML = `
@@ -757,24 +782,155 @@ async function renderCanvasVacanze() {
           ${alloggioHeaderHtml}
         </div>
         <div class="page-header-actions">
+          <button class="btn btn-ghost" data-action="stampa-vacanza"><i class="fa-solid fa-print"></i> Stampa / PDF</button>
           <button class="btn btn-ghost" data-action="edit-vacanza">Modifica</button>
           <button class="btn btn-danger" data-action="delete-vacanza">Elimina</button>
         </div>
       </div>
 
-      ${alloggiPoolHtml}
+      ${vTab === 'programma' ? alloggiPoolHtml : ''}
 
-      <div class="giorni-row">
-        ${giorniTabs.join('')}
-        <button class="giorno-add-tab" data-action="add-giorno" title="Aggiungi giorno"><i class="fa-solid fa-plus"></i></button>
-      </div>
-
-      ${toolbarHtml}
-      ${timelineHtml}
+      ${subTabsHtml}
+      ${tabContentHtml}
     </div>`;
 }
 
-/** Renderizza una singola voce di giornata (tappa / partenza / rientro / spostamento). */
+/** Etichetta leggibile per la voce di giornata a cui una spesa può essere collegata. */
+async function labelVoceSpesa(voceId) {
+  if (!voceId) return null;
+  const voce = await repo.getVoce(voceId);
+  if (!voce) return 'voce eliminata';
+  if (voce.tipoVoce === 'tappa') {
+    const t = voce.tappaId ? await repo.getTappa(voce.tappaId) : null;
+    return t ? t.nome : 'tappa eliminata';
+  }
+  if (voce.tipoVoce === 'spostamento') return `Spostamento (${mezzoLabel(voce.mezzo)})`;
+  if (voce.tipoVoce === 'partenza') return 'Partenza';
+  return 'Rientro';
+}
+
+/** Opzioni <optgroup> per collegare una spesa a una voce di un giorno qualsiasi della vacanza. */
+async function opzioniVociSpesa(giornate) {
+  const gruppi = [];
+  for (let i = 0; i < giornate.length; i++) {
+    const voci = await repo.listVociByGiornata(giornate[i].id);
+    if (!voci.length) continue;
+    const opzioni = await Promise.all(voci.map(async (v) => ({ id: v.id, label: await labelVoceSpesa(v.id) })));
+    gruppi.push({ titolo: `Giorno ${i + 1}`, opzioni });
+  }
+  return gruppi;
+}
+
+function calcoloLabelBudget(record, vacanza) {
+  if (record.modalita === 'aPersona' || record.modalita === 'daDividere') {
+    const persone = repo.risolviNumeroPersone(record, vacanza);
+    const segue = record.numeroPersone == null;
+    if (record.modalita === 'aPersona') {
+      return `${(Number(record.importoAPersona) || 0).toFixed(2)}€ × ${persone}${segue ? ' <span class="budget-segue">(segue vacanza)</span>' : ''}`;
+    }
+    const quota = repo.calcolaQuotaAPersona(record, vacanza);
+    return `${(Number(record.importoDaDividere) || 0).toFixed(2)}€ ÷ ${persone}${segue ? ' <span class="budget-segue">(segue vacanza)</span>' : ''} ≈ ${quota}€ cad.`;
+  }
+  return 'totale';
+}
+
+async function renderBudgetTabHtml(vacanza) {
+  const spese = await repo.listSpeseByVacanza(vacanza.id);
+  const categorie = await repo.listCategorieSpesa();
+  const categorieById = Object.fromEntries(categorie.map((c) => [c.id, c]));
+  const riepilogo = await repo.getRiepilogoBudget(vacanza.id);
+
+  const righeSpese = await Promise.all(
+    spese.map(async (s) => {
+      const importo = repo.calcolaImportoRecord(s, vacanza);
+      const isCondivisa = repo.isRecordCondiviso(s, vacanza);
+      const cat = s.categoriaId ? categorieById[s.categoriaId] : null;
+      const voceLabel = await labelVoceSpesa(s.voceId);
+      return `<tr>
+        <td>${escapeHtml(s.descrizione || '—')}${voceLabel ? `<div class="settings-td-sub">${escapeHtml(voceLabel)}</div>` : ''}</td>
+        <td>${cat ? escapeHtml(cat.nome) : '—'}</td>
+        <td class="settings-td-num">${calcoloLabelBudget(s, vacanza)}</td>
+        <td class="settings-td-num"><strong>${importo.toFixed(2)}€</strong></td>
+        <td>${isCondivisa ? '<span class="budget-badge">Condivisa</span>' : '<span class="budget-badge is-extra">Extra</span>'}</td>
+        <td class="settings-td-actions">
+          <button class="btn btn-icon btn-ghost" data-action="edit-spesa" data-id="${s.id}" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-icon btn-ghost" data-action="delete-spesa" data-id="${s.id}" title="Elimina"><i class="fa-solid fa-trash-can"></i></button>
+        </td>
+      </tr>`;
+    })
+  );
+
+  const listaConCosto = (await repo.listListaVociByVacanza(vacanza.id)).filter((v) => v.modalita && v.contaNelTotale !== false);
+  const righeLista = listaConCosto.map((v) => {
+    const importo = repo.calcolaImportoRecord(v, vacanza);
+    const isCondivisa = repo.isRecordCondiviso(v, vacanza);
+    return `<tr>
+      <td>${escapeHtml(v.testo)}<div class="settings-td-sub">dalla Lista</div></td>
+      <td>—</td>
+      <td class="settings-td-num">${calcoloLabelBudget(v, vacanza)}</td>
+      <td class="settings-td-num"><strong>${importo.toFixed(2)}€</strong></td>
+      <td>${isCondivisa ? '<span class="budget-badge">Condivisa</span>' : '<span class="budget-badge is-extra">Extra</span>'}</td>
+      <td></td>
+    </tr>`;
+  });
+
+  return `
+    <p class="settings-tab-hint">Le spese "a persona"/"da dividere" con lo stesso numero di persone della vacanza (${riepilogo.numeroPersone}) sono <strong>condivise</strong> e danno un vero costo a testa. Tutto il resto — spese totali, o con un numero di persone diverso — è <strong>extra</strong>, elencato voce per voce. Anche le voci Lista con un costo (spunta "conta nel totale" attiva) compaiono qui.</p>
+    <div class="settings-tab-toolbar"><button class="btn btn-sm btn-primary" data-action="new-spesa"><i class="fa-solid fa-plus"></i> Nuova spesa</button></div>
+    ${
+      righeSpese.length || righeLista.length
+        ? `<div class="settings-table-wrap"><table class="settings-table budget-table">
+            <thead><tr><th>Descrizione</th><th>Categoria</th><th>Calcolo</th><th>Importo</th><th>Tipo</th><th></th></tr></thead>
+            <tbody>${righeSpese.join('')}${righeLista.join('')}</tbody>
+          </table></div>`
+        : `<div class="empty-list-note">Nessuna spesa ancora.</div>`
+    }
+    <div class="budget-riepilogo">
+      <div class="budget-riepilogo-riga"><span>Totale condiviso (÷ ${riepilogo.numeroPersone} person${riepilogo.numeroPersone === 1 ? 'a' : 'e'})</span><strong>${riepilogo.totaleCondiviso.toFixed(2)}€</strong></div>
+      <div class="budget-riepilogo-riga budget-riepilogo-sub"><span>→ a persona</span><strong>${riepilogo.totaleAPersona != null ? riepilogo.totaleAPersona : '—'}€</strong></div>
+      <div class="budget-riepilogo-riga"><span>Extra (${riepilogo.extra.length} voc${riepilogo.extra.length === 1 ? 'e' : 'i'})</span><strong>${riepilogo.totaleExtra.toFixed(2)}€</strong></div>
+      <div class="budget-riepilogo-riga budget-riepilogo-totale"><span>Totale generale vacanza</span><strong>${riepilogo.totaleGenerale.toFixed(2)}€</strong></div>
+    </div>`;
+}
+
+async function renderListaTabHtml(vacanza, giornate) {
+  const selezionato = state.listaGiornoSelezionato;
+
+  const selectorHtml = `<div class="lista-day-picker">
+    <button class="lista-day-btn ${selezionato === null ? 'is-active' : ''}" data-action="set-lista-giorno" data-giorno-id="">Generale (valigia)</button>
+    ${giornate.map((g, i) => `<button class="lista-day-btn ${selezionato === g.id ? 'is-active' : ''}" data-action="set-lista-giorno" data-giorno-id="${g.id}">Giorno ${i + 1}</button>`).join('')}
+  </div>`;
+
+  const voci = selezionato ? await repo.listListaVociGiorno(selezionato) : await repo.listListaVociGenerale(vacanza.id);
+
+  const righeHtml = voci
+    .map((v) => {
+      const importo = v.modalita ? repo.calcolaImportoRecord(v, vacanza) : null;
+      return `<div class="lista-voce ${v.fatto ? 'is-fatto' : ''}">
+        <label class="lista-voce-check">
+          <input type="checkbox" data-action="toggle-lista-voce" data-id="${v.id}" ${v.fatto ? 'checked' : ''}>
+          <span>${escapeHtml(v.testo)}</span>
+        </label>
+        ${
+          importo != null
+            ? `<span class="lista-voce-costo ${v.contaNelTotale ? '' : 'is-escluso'}">${importo.toFixed(2)}€${v.modalita !== 'secco' ? ` <span class="budget-segue">(${calcoloLabelBudget(v, vacanza).replace(/<[^>]+>/g, '')})</span>` : ''}${!v.contaNelTotale ? ' · escluso dal totale' : ''}</span>`
+            : ''
+        }
+        <div class="lista-voce-actions">
+          <button class="btn btn-icon btn-ghost" data-action="edit-lista-voce" data-id="${v.id}" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-icon btn-ghost" data-action="delete-lista-voce" data-id="${v.id}" title="Elimina"><i class="fa-solid fa-trash-can"></i></button>
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  return `
+    <p class="settings-tab-hint">Una lista generale per la vacanza (la valigia) più una per ciascun giorno. Una voce con un costo entra di default nel Budget, tra gli Extra: puoi escluderla se non deve contare.</p>
+    ${selectorHtml}
+    <div class="settings-tab-toolbar"><button class="btn btn-sm btn-primary" data-action="new-lista-voce"><i class="fa-solid fa-plus"></i> Aggiungi voce</button></div>
+    ${voci.length ? `<div class="lista-voci">${righeHtml}</div>` : `<div class="empty-list-note">Nessuna voce ancora.</div>`}`;
+}
+
 /** Involucro comune a tutte le card della timeline: colonna oraria a piena altezza (il "taglio"
  * blu) più una colonna principale che contiene la riga di contenuto e le note sotto. */
 function timelineCardHtml({ id, extraClass = '', timeColContent, mainContent, azioniHtml, noteHtml }) {
@@ -1317,6 +1473,7 @@ async function renderCanvasImpostazioni() {
   const tabsHtml = `<div class="settings-tabs">
     <button class="settings-tab ${tab === 'categorie' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="categorie">Categorie destinazioni</button>
     <button class="settings-tab ${tab === 'tipi' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="tipi">Tipi di tappa</button>
+    <button class="settings-tab ${tab === 'categorieSpesa' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="categorieSpesa">Categorie spesa</button>
     <button class="settings-tab ${tab === 'routing' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="routing">Routing</button>
     <button class="settings-tab ${tab === 'navigazione' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="navigazione">Navigazione</button>
   </div>`;
@@ -1374,6 +1531,32 @@ async function renderCanvasImpostazioni() {
               <tbody>${righe.join('')}</tbody>
             </table></div>`
           : `<div class="empty-list-note">Nessun tipo ancora.</div>`
+      }`;
+  } else if (tab === 'categorieSpesa') {
+    const categorie = await repo.listCategorieSpesa();
+    const righe = await Promise.all(
+      categorie.map(async (c) => {
+        const usage = await repo.checkCategoriaSpesaUsage(c.id);
+        return `<tr>
+          <td>${escapeHtml(c.nome)}</td>
+          <td class="settings-td-num">${usage.count} spes${usage.count === 1 ? 'a' : 'e'}</td>
+          <td class="settings-td-actions">
+            <button class="btn btn-icon btn-ghost" data-action="edit-categoria-spesa" data-id="${c.id}" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-icon btn-ghost" data-action="delete-categoria-spesa" data-id="${c.id}" title="Elimina"><i class="fa-solid fa-trash-can"></i></button>
+          </td>
+        </tr>`;
+      })
+    );
+    contenuto = `
+      <p class="settings-tab-hint">Per classificare le spese nel Budget di ogni vacanza (Alloggio, Trasporto, Cibo...).</p>
+      <div class="settings-tab-toolbar"><button class="btn btn-sm btn-primary" data-action="new-categoria-spesa"><i class="fa-solid fa-plus"></i> Nuova categoria</button></div>
+      ${
+        righe.length
+          ? `<div class="settings-table-wrap"><table class="settings-table">
+              <thead><tr><th>Nome</th><th>Utilizzo</th><th></th></tr></thead>
+              <tbody>${righe.join('')}</tbody>
+            </table></div>`
+          : `<div class="empty-list-note">Nessuna categoria ancora.</div>`
       }`;
   } else if (tab === 'routing') {
     contenuto = `
@@ -1574,6 +1757,39 @@ async function handleCanvasClick(e) {
     openVacanzaForm(await repo.getVacanza(state.selectedVacanzaId));
   } else if (action === 'delete-vacanza') {
     await handleDeleteVacanza(state.selectedVacanzaId);
+  } else if (action === 'stampa-vacanza') {
+    apriSelezioneStampa(state.selectedVacanzaId);
+  } else if (action === 'set-vacanza-tab') {
+    state.vacanzaTab = el.dataset.tab;
+    await renderCanvas();
+  } else if (action === 'new-spesa') {
+    await openSpesaForm(await repo.getVacanza(state.selectedVacanzaId));
+  } else if (action === 'edit-spesa') {
+    const vacanza = await repo.getVacanza(state.selectedVacanzaId);
+    await openSpesaForm(vacanza, await repo.getSpesa(id));
+  } else if (action === 'delete-spesa') {
+    e.stopPropagation();
+    const ok = await showModal({ title: 'Eliminare questa spesa?', confirmLabel: 'Elimina', danger: true });
+    if (!ok) return;
+    await repo.deleteSpesa(id);
+    await renderCanvas();
+  } else if (action === 'set-lista-giorno') {
+    state.listaGiornoSelezionato = el.dataset.giornoId || null;
+    await renderCanvas();
+  } else if (action === 'new-lista-voce') {
+    await openListaVoceForm(state.selectedVacanzaId, state.listaGiornoSelezionato);
+  } else if (action === 'edit-lista-voce') {
+    await openListaVoceForm(state.selectedVacanzaId, state.listaGiornoSelezionato, await repo.getListaVoce(id));
+  } else if (action === 'delete-lista-voce') {
+    e.stopPropagation();
+    const ok = await showModal({ title: 'Eliminare questa voce?', confirmLabel: 'Elimina', danger: true });
+    if (!ok) return;
+    await repo.deleteListaVoce(id);
+    await renderCanvas();
+  } else if (action === 'toggle-lista-voce') {
+    e.stopPropagation();
+    await repo.toggleListaVoceFatto(id);
+    await renderCanvas();
   } else if (action === 'select-giorno') {
     state.selectedGiornataId = id;
     await renderCanvas();
@@ -1610,6 +1826,16 @@ async function handleCanvasClick(e) {
     else await openVoceTappaForm(giornata, voce);
   } else if (action === 'delete-voce') {
     e.stopPropagation();
+    const usage = await repo.checkVoceSpesaUsage(id);
+    if (usage.count > 0) {
+      const ok = await showModal({
+        title: 'Questa voce ha una spesa collegata',
+        bodyHtml: `Eliminandola sparirà anche la spesa "${escapeHtml(usage.spese[0].descrizione)}" dal Budget.`,
+        confirmLabel: 'Elimina comunque',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     await repo.deleteVoce(id);
     await renderCanvas();
   } else if (action === 'set-alloggio-vacanza') {
@@ -1644,6 +1870,13 @@ async function handleCanvasClick(e) {
   } else if (action === 'delete-categoria-dest') {
     e.stopPropagation();
     await handleDeleteCategoriaDestinazione(id);
+  } else if (action === 'new-categoria-spesa') {
+    openCategoriaSpesaForm();
+  } else if (action === 'edit-categoria-spesa') {
+    openCategoriaSpesaForm(await repo.getCategoriaSpesa(id));
+  } else if (action === 'delete-categoria-spesa') {
+    e.stopPropagation();
+    await handleDeleteCategoriaSpesa(id);
   }
 }
 
@@ -1709,6 +1942,253 @@ async function handleDeleteVacanza(id) {
   await renderCanvas();
 }
 
+/** Costruisce la vista stampabile (recap + programma giorno per giorno) e apre la finestra di
+ * stampa del browser: da lì si sceglie "Salva come PDF" (o si stampa davvero). Nessuna libreria
+ * PDF: sfrutta il motore di stampa del browser stesso, più affidabile e già installato ovunque. */
+/** Piccola scelta prima di stampare: a volte serve solo il programma, altre volte solo il
+ * Budget o solo la Lista, altre volte tutto — invece di deciderlo per te, te lo chiedo ogni volta. */
+function apriSelezioneStampa(vacanzaId) {
+  openInspector(
+    'Cosa vuoi stampare?',
+    `<form id="form-stampa-selezione">
+      <div class="field">
+        <label class="chip-checkbox"><input type="checkbox" name="programma" checked><span>Programma giorno per giorno</span></label>
+      </div>
+      <div class="field">
+        <label class="chip-checkbox"><input type="checkbox" name="budget"><span>Budget</span></label>
+      </div>
+      <div class="field">
+        <label class="chip-checkbox"><input type="checkbox" name="lista"><span>Lista (valigia + giorni)</span></label>
+      </div>
+      <div class="inspector-footer">
+        <button type="submit" class="btn btn-primary">Genera anteprima di stampa</button>
+        <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
+      </div>
+    </form>`
+  );
+
+  document.getElementById('form-stampa-selezione').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const sezioni = {
+      programma: fd.get('programma') === 'on',
+      budget: fd.get('budget') === 'on',
+      lista: fd.get('lista') === 'on',
+    };
+    if (!sezioni.programma && !sezioni.budget && !sezioni.lista) {
+      await showModal({ title: 'Scegli almeno una sezione', confirmLabel: 'Ho capito' });
+      return;
+    }
+    closeInspector();
+    await stampaVacanza(vacanzaId, sezioni);
+  });
+}
+
+async function stampaVacanza(vacanzaId, sezioni = { programma: true, budget: false, lista: false }) {
+  const vacanza = await repo.getVacanza(vacanzaId);
+  const giornate = await repo.listGiornateByVacanza(vacanzaId);
+
+  let corpoHtml = '';
+
+  if (sezioni.programma) {
+    const tipiList = await repo.listTipiTappa();
+    const tipiById = Object.fromEntries(tipiList.map((t) => [t.id, t]));
+
+    async function nomeDestinazione(id) {
+      if (!id) return null;
+      const d = await repo.getDestinazione(id);
+      return d ? d.nome : null;
+    }
+    async function nomeTappa(id) {
+      if (!id) return null;
+      const t = await repo.getTappa(id);
+      return t ? t.nome : null;
+    }
+
+    let recapHtml;
+    if (vacanza.tipo === 'fissa') {
+      const nome = await nomeDestinazione(vacanza.destinazionePrincipaleId);
+      const alloggio = await nomeTappa(vacanza.alloggioId);
+      recapHtml = `
+        <div><strong>Destinazione:</strong> ${escapeHtml(nome || '—')}</div>
+        ${alloggio ? `<div><strong>Alloggio:</strong> ${escapeHtml(alloggio)}</div>` : ''}
+        <div><strong>Durata:</strong> ${giornate.length} giorn${giornate.length === 1 ? 'o' : 'i'}</div>`;
+    } else {
+      const destIds = [...new Set(giornate.map((g) => g.destinazioneId).filter(Boolean))];
+      const nomiDest = (await Promise.all(destIds.map(nomeDestinazione))).filter(Boolean);
+      const nomiAlloggi = (await Promise.all((vacanza.alloggiIds || []).map(nomeTappa))).filter(Boolean);
+      recapHtml = `
+        <div><strong>Itinerario:</strong> ${escapeHtml(nomiDest.join(' → ') || '—')}</div>
+        ${nomiAlloggi.length ? `<div><strong>Alloggi:</strong> ${escapeHtml(nomiAlloggi.join(', '))}</div>` : ''}
+        <div><strong>Durata:</strong> ${giornate.length} giorn${giornate.length === 1 ? 'o' : 'i'}</div>`;
+    }
+
+    const giorniHtml = [];
+    for (let i = 0; i < giornate.length; i++) {
+      const g = giornate[i];
+      const voci = computeOrariVoci(await repo.listVociByGiornata(g.id));
+      const nomeDest = await nomeDestinazione(g.destinazioneId);
+      const vociHtml = await Promise.all(voci.map((v) => printVoceHtml(v, tipiById, nomeTappa)));
+      giorniHtml.push(`
+        <div class="print-giorno">
+          <div class="print-giorno-titolo">Giorno ${i + 1}${g.data ? ` — ${formatDate(g.data)}` : ''}${nomeDest ? ` · ${escapeHtml(nomeDest)}` : ''}</div>
+          ${vociHtml.length ? vociHtml.join('') : '<div class="print-voce-meta">Nessuna voce pianificata.</div>'}
+        </div>`);
+    }
+
+    corpoHtml += `<div class="print-recap">${recapHtml}</div>${giorniHtml.join('')}`;
+  }
+
+  if (sezioni.budget) {
+    corpoHtml += await printBudgetHtml(vacanza);
+  }
+
+  if (sezioni.lista) {
+    corpoHtml += await printListaHtml(vacanza, giornate);
+  }
+
+  document.getElementById('print-area').innerHTML = `
+    <div class="print-page">
+      <div class="print-title">${escapeHtml(vacanza.nome)}</div>
+      <span class="print-badge">${vacanza.tipo === 'fissa' ? 'Un luogo' : 'Itinerante'}</span>
+      ${vacanza.dataInizio ? `<div class="print-voce-meta">${formatDate(vacanza.dataInizio)} → ${vacanza.dataFine ? formatDate(vacanza.dataFine) : '?'}</div>` : ''}
+      ${corpoHtml}
+      <div class="print-footer">Generato da Vacation Builder — ${new Date().toLocaleDateString('it-IT')}</div>
+    </div>`;
+
+  window.print();
+}
+
+async function printBudgetHtml(vacanza) {
+  const spese = await repo.listSpeseByVacanza(vacanza.id);
+  const categorie = await repo.listCategorieSpesa();
+  const categorieById = Object.fromEntries(categorie.map((c) => [c.id, c]));
+  const riepilogo = await repo.getRiepilogoBudget(vacanza.id);
+  const listaConCosto = (await repo.listListaVociByVacanza(vacanza.id)).filter((v) => v.modalita && v.contaNelTotale !== false);
+
+  const righeSpese = spese.map((s) => {
+    const importo = repo.calcolaImportoRecord(s, vacanza);
+    const cat = s.categoriaId ? categorieById[s.categoriaId] : null;
+    const isCondivisa = repo.isRecordCondiviso(s, vacanza);
+    return `<div class="print-voce">
+      <div class="print-voce-corpo">
+        <div class="print-voce-titolo">${escapeHtml(s.descrizione)}${cat ? ` · ${escapeHtml(cat.nome)}` : ''}</div>
+        <div class="print-voce-meta">${isCondivisa ? 'Condivisa' : 'Extra'}</div>
+      </div>
+      <div class="print-voce-ora">${importo.toFixed(2)}€</div>
+    </div>`;
+  });
+
+  const righeLista = listaConCosto.map((v) => {
+    const importo = repo.calcolaImportoRecord(v, vacanza);
+    const isCondivisa = repo.isRecordCondiviso(v, vacanza);
+    return `<div class="print-voce">
+      <div class="print-voce-corpo">
+        <div class="print-voce-titolo">${escapeHtml(v.testo)}</div>
+        <div class="print-voce-meta">da Lista · ${isCondivisa ? 'Condivisa' : 'Extra'}</div>
+      </div>
+      <div class="print-voce-ora">${importo.toFixed(2)}€</div>
+    </div>`;
+  });
+
+  const righe = [...righeSpese, ...righeLista];
+
+  return `
+    <div class="print-giorno">
+      <div class="print-giorno-titolo">Budget</div>
+      ${righe.length ? righe.join('') : '<div class="print-voce-meta">Nessuna spesa registrata.</div>'}
+      <div class="print-recap">
+        <div><strong>Totale condiviso</strong> (÷ ${riepilogo.numeroPersone}): ${riepilogo.totaleCondiviso.toFixed(2)}€ — ${riepilogo.totaleAPersona ?? '—'}€ a persona</div>
+        <div><strong>Extra:</strong> ${riepilogo.totaleExtra.toFixed(2)}€</div>
+        <div><strong>Totale generale:</strong> ${riepilogo.totaleGenerale.toFixed(2)}€</div>
+      </div>
+    </div>`;
+}
+
+async function printListaHtml(vacanza, giornate) {
+  const generale = await repo.listListaVociGenerale(vacanza.id);
+  const sezioniLista = [{ titolo: 'Lista generale (valigia)', voci: generale }];
+  for (let i = 0; i < giornate.length; i++) {
+    const voci = await repo.listListaVociGiorno(giornate[i].id);
+    if (voci.length) sezioniLista.push({ titolo: `Lista Giorno ${i + 1}`, voci });
+  }
+
+  const haCostiChContano = sezioniLista.some((sez) => sez.voci.some((v) => v.modalita && v.contaNelTotale !== false));
+  const notaCosti = haCostiChContano
+    ? `<div class="print-recap"><em>I prezzi indicati qui sono già inclusi nel totale del Budget: non sommarli di nuovo.</em></div>`
+    : '';
+
+  const sezioniHtml = sezioniLista
+    .map((sez) => {
+      const righeVoci = sez.voci.map((v) => {
+        const importo = v.modalita ? repo.calcolaImportoRecord(v, vacanza) : null;
+        return `<div class="print-voce">
+          <div class="print-voce-corpo">
+            <div class="print-voce-titolo">${v.fatto ? '☑' : '☐'} ${escapeHtml(v.testo)}</div>
+          </div>
+          ${importo != null ? `<div class="print-voce-ora">${importo.toFixed(2)}€</div>` : ''}
+        </div>`;
+      });
+      return `
+        <div class="print-giorno">
+          <div class="print-giorno-titolo">${escapeHtml(sez.titolo)}</div>
+          ${righeVoci.length ? righeVoci.join('') : '<div class="print-voce-meta">Nessuna voce.</div>'}
+        </div>`;
+    })
+    .join('');
+
+  return notaCosti + sezioniHtml;
+}
+
+async function printVoceHtml(voce, tipiById, nomeTappa) {
+  const ora = formatOrarioStampa(voce._inizio, voce._fine);
+
+  if (voce.tipoVoce === 'partenza' || voce.tipoVoce === 'rientro') {
+    const isPartenza = voce.tipoVoce === 'partenza';
+    const nome = await nomeTappa(isPartenza ? voce.daRifTappaId : voce.aRifTappaId);
+    return `<div class="print-voce">
+      <div class="print-voce-ora">${ora}</div>
+      <div class="print-voce-corpo">
+        <div class="print-voce-titolo">${isPartenza ? 'Partenza' : 'Rientro'}${nome ? ` — ${escapeHtml(nome)}` : ''}</div>
+        ${voce.note ? `<div class="print-voce-note">${escapeHtml(voce.note)}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  if (voce.tipoVoce === 'spostamento') {
+    const daNome = await nomeTappa(voce.daRifTappaId);
+    const aNome = await nomeTappa(voce.aRifTappaId);
+    const percorso = daNome || aNome ? `${daNome || '?'} → ${aNome || '?'}` : '';
+    const distanza = voce.distanzaRealeKm != null ? ` · ${voce.distanzaRealeKm.toFixed(1)} km` : '';
+    return `<div class="print-voce">
+      <div class="print-voce-ora">${ora}</div>
+      <div class="print-voce-corpo">
+        <div class="print-voce-titolo">Spostamento (${escapeHtml(mezzoLabel(voce.mezzo))})</div>
+        ${percorso ? `<div class="print-voce-meta">${escapeHtml(percorso)}${distanza}</div>` : ''}
+        ${voce.note ? `<div class="print-voce-note">${escapeHtml(voce.note)}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  // tipoVoce === 'tappa'
+  const tappa = voce.tappaId ? await repo.getTappa(voce.tappaId) : null;
+  const tipo = tappa ? tipiById[(tappa.tipi || [])[0]] : null;
+  return `<div class="print-voce">
+    <div class="print-voce-ora">${ora}</div>
+    <div class="print-voce-corpo">
+      <div class="print-voce-titolo">${escapeHtml(tappa ? tappa.nome : 'Tappa eliminata')}</div>
+      ${tipo ? `<div class="print-voce-meta">${escapeHtml(tipo.nome)}</div>` : ''}
+      ${voce.note ? `<div class="print-voce-note">${escapeHtml(voce.note)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function formatOrarioStampa(inizio, fine) {
+  if (inizio == null) return '?';
+  if (fine == null || fine === inizio) return minutesToTime(inizio);
+  return `${minutesToTime(inizio)}–${minutesToTime(fine)}`;
+}
+
 async function handleDeleteGiorno(id) {
   const voci = await repo.listVociByGiornata(id);
   const ok = await showModal({
@@ -1754,6 +2234,23 @@ async function handleDeleteCategoriaDestinazione(id) {
   const ok = await showModal({ title: `Eliminare la categoria "${categoria.nome}"?`, bodyHtml: 'Nessuna destinazione la sta usando: può essere rimossa senza conseguenze.', confirmLabel: 'Elimina', danger: true });
   if (!ok) return;
   await repo.deleteCategoriaDestinazione(id);
+  await renderCanvas();
+}
+
+async function handleDeleteCategoriaSpesa(id) {
+  const categoria = await repo.getCategoriaSpesa(id);
+  const usage = await repo.checkCategoriaSpesaUsage(id);
+  if (usage.count > 0) {
+    await showModal({
+      title: 'Categoria ancora in uso',
+      bodyHtml: `"${escapeHtml(categoria.nome)}" è assegnata a <strong>${usage.count}</strong> spes${usage.count === 1 ? 'a' : 'e'}. Riassegnale prima di eliminarla, oppure rinomina questa categoria invece di cancellarla.`,
+      confirmLabel: 'Ho capito',
+    });
+    return;
+  }
+  const ok = await showModal({ title: `Eliminare la categoria "${categoria.nome}"?`, bodyHtml: 'Nessuna spesa la sta usando: può essere rimossa senza conseguenze.', confirmLabel: 'Elimina', danger: true });
+  if (!ok) return;
+  await repo.deleteCategoriaSpesa(id);
   await renderCanvas();
 }
 
@@ -2093,6 +2590,11 @@ function openVacanzaForm(vacanza = null) {
           <div class="field"><label class="field-label">Data inizio</label><input type="date" name="dataInizio" value="${vacanza.dataInizio || ''}"></div>
           <div class="field"><label class="field-label">Data fine</label><input type="date" name="dataFine" value="${vacanza.dataFine || ''}"></div>
         </div>
+        <div class="field">
+          <label class="field-label">Numero di persone</label>
+          <input type="number" name="numeroPersone" min="1" step="1" value="${vacanza.numeroPersone || 1}">
+          <div class="hint">Usato nel Budget per capire quali spese sono davvero condivise da tutto il gruppo.</div>
+        </div>
         <div class="hint">Tipo e destinazione principale non sono modificabili dopo la creazione, per non lasciare giornate orfane: se serve cambiarli, crea una nuova vacanza.</div>
         <div class="inspector-footer">
           <button type="submit" class="btn btn-primary">Salva modifiche</button>
@@ -2103,7 +2605,7 @@ function openVacanzaForm(vacanza = null) {
     document.getElementById('form-vacanza-edit').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      await repo.updateVacanza(vacanza.id, { nome: fd.get('nome'), dataInizio: fd.get('dataInizio'), dataFine: fd.get('dataFine') });
+      await repo.updateVacanza(vacanza.id, { nome: fd.get('nome'), dataInizio: fd.get('dataInizio'), dataFine: fd.get('dataFine'), numeroPersone: fd.get('numeroPersone') });
       closeInspector();
       await renderCanvas();
     });
@@ -2154,6 +2656,10 @@ function openVacanzaForm(vacanza = null) {
             <div class="field"><label class="field-label">Data inizio (opzionale)</label><input type="date" name="dataInizio"></div>
             <div class="field"><label class="field-label">Data fine (opzionale)</label><input type="date" name="dataFine"></div>
           </div>
+          <div class="field">
+            <label class="field-label">Numero di persone</label>
+            <input type="number" name="numeroPersone" min="1" step="1" value="1">
+          </div>
           <div class="inspector-footer">
             <button type="submit" class="btn btn-primary">Crea vacanza</button>
             <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
@@ -2192,6 +2698,7 @@ function openVacanzaForm(vacanza = null) {
           destinazionePrincipaleId: tipo === 'fissa' ? fd.get('destinazionePrincipaleId') : null,
           dataInizio: fd.get('dataInizio') || '',
           dataFine: fd.get('dataFine') || '',
+          numeroPersone: fd.get('numeroPersone') || 1,
         });
         state.selectedVacanzaId = created.id;
         state.selectedGiornataId = null;
@@ -2200,6 +2707,260 @@ function openVacanzaForm(vacanza = null) {
       });
     }
   });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Budget: form Spesa                                                      */
+/* ---------------------------------------------------------------------- */
+
+/**
+ * Widget HTML condiviso per l'importo di una Spesa o di una voce Lista: stessa struttura,
+ * stesso meccanismo "segui il numero di persone della vacanza" per entrambe. idPrefix distingue
+ * gli id quando il widget compare più volte nella stessa pagina (non succede oggi, ma non costa
+ * nulla essere prudenti).
+ */
+function prezzoWidgetHtml(idPrefix, { modalita, importoTotale, importoAPersona, importoDaDividere, numeroPersone }, vacanzaNumeroPersone) {
+  const segueVacanza = numeroPersone == null;
+  const numeroEffettivo = segueVacanza ? vacanzaNumeroPersone : numeroPersone;
+  const warning = !segueVacanza && numeroPersone > vacanzaNumeroPersone;
+  return `
+    <div class="type-toggle" id="${idPrefix}-modalita-toggle">
+      <button type="button" class="type-toggle-btn ${modalita === 'secco' ? 'is-selected' : ''}" data-modalita="secco">
+        <div class="type-toggle-title">Totale secco</div>
+        <div class="type-toggle-sub">Es. 1000€ in tutto</div>
+      </button>
+      <button type="button" class="type-toggle-btn ${modalita === 'aPersona' ? 'is-selected' : ''}" data-modalita="aPersona">
+        <div class="type-toggle-title">A persona</div>
+        <div class="type-toggle-sub">Importo unitario × persone</div>
+      </button>
+      <button type="button" class="type-toggle-btn ${modalita === 'daDividere' ? 'is-selected' : ''}" data-modalita="daDividere">
+        <div class="type-toggle-title">Da dividere</div>
+        <div class="type-toggle-sub">Totale ÷ persone (arrotondato per eccesso)</div>
+      </button>
+    </div>
+    ${
+      modalita === 'secco'
+        ? `<div class="field"><label class="field-label">Importo totale (€)</label><input type="number" name="importoTotale" min="0" step="0.01" required value="${importoTotale ?? ''}"></div>`
+        : `<div class="field">
+            <label class="field-label">${modalita === 'aPersona' ? 'Importo a persona (€)' : 'Totale da dividere (€)'}</label>
+            <input type="number" name="${modalita === 'aPersona' ? 'importoAPersona' : 'importoDaDividere'}" min="0" step="0.01" required value="${(modalita === 'aPersona' ? importoAPersona : importoDaDividere) ?? ''}">
+          </div>
+          <div class="field">
+            <label class="chip-checkbox">
+              <input type="checkbox" id="${idPrefix}-segue-vacanza" ${segueVacanza ? 'checked' : ''}>
+              <span>Segui il numero di persone della vacanza (${vacanzaNumeroPersone})</span>
+            </label>
+          </div>
+          <div class="field" id="${idPrefix}-numero-persone-field" style="${segueVacanza ? 'display:none;' : ''}">
+            <label class="field-label">Numero di persone per questa voce</label>
+            <input type="number" name="numeroPersone" id="${idPrefix}-numero-persone-input" min="1" step="1" value="${numeroEffettivo}">
+            ${warning ? `<div class="hint" style="color:var(--red-dark);"><i class="fa-solid fa-triangle-exclamation"></i> Sono più delle ${vacanzaNumeroPersone} persone della vacanza.</div>` : ''}
+          </div>
+          <div class="hint">Se il numero coincide con quello della vacanza, questa voce entra tra le <strong>condivise</strong> nel riepilogo Budget e si aggiorna da sola se in futuro cambi il numero di persone della vacanza. Se lo cambi qui, resta fisso a quello che scrivi, ed entra tra gli <strong>Extra</strong>.</div>`
+    }`;
+}
+
+/** Aggancia gli eventi del widget importo: cambio modalità e checkbox "segui la vacanza"
+ * richiedono entrambi un ri-render dello slot che li contiene (renderStep). */
+function bindPrezzoWidgetEvents(idPrefix, prezzoState, renderStep) {
+  document.getElementById(`${idPrefix}-modalita-toggle`).addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-modalita]');
+    if (!btn) return;
+    prezzoState.modalita = btn.dataset.modalita;
+    renderStep();
+  });
+  const segueCheckbox = document.getElementById(`${idPrefix}-segue-vacanza`);
+  if (segueCheckbox) {
+    segueCheckbox.addEventListener('change', () => {
+      prezzoState.numeroPersone = segueCheckbox.checked ? null : prezzoState.numeroPersoneEsplicito || 1;
+      renderStep();
+    });
+  }
+  const numeroInput = document.getElementById(`${idPrefix}-numero-persone-input`);
+  if (numeroInput) {
+    numeroInput.addEventListener('input', () => {
+      prezzoState.numeroPersoneEsplicito = Number(numeroInput.value) || 1;
+      prezzoState.numeroPersone = prezzoState.numeroPersoneEsplicito;
+      renderStep();
+    });
+  }
+}
+
+async function openSpesaForm(vacanza, spesa = null) {
+  const isEdit = !!spesa;
+  const categorie = await repo.listCategorieSpesa();
+  const giornate = await repo.listGiornateByVacanza(vacanza.id);
+  const gruppiVoci = await opzioniVociSpesa(giornate);
+  const vacanzaNumeroPersone = vacanza.numeroPersone || 1;
+
+  const prezzoState = {
+    modalita: isEdit ? spesa.modalita : 'secco',
+    importoTotale: isEdit ? spesa.importoTotale : null,
+    importoAPersona: isEdit ? spesa.importoAPersona : null,
+    importoDaDividere: isEdit ? spesa.importoDaDividere : null,
+    numeroPersone: isEdit ? spesa.numeroPersone : null, // null = segue la vacanza, di default per le nuove
+    numeroPersoneEsplicito: isEdit && spesa.numeroPersone != null ? spesa.numeroPersone : vacanzaNumeroPersone,
+  };
+
+  openInspector(isEdit ? 'Modifica spesa' : 'Nuova spesa', `<div id="spesa-form-slot">Caricamento…</div>`);
+
+  function renderStep() {
+    const slot = document.getElementById('spesa-form-slot');
+    if (!slot) return;
+    slot.innerHTML = `
+      <form id="form-spesa">
+        <div class="field">
+          <label class="field-label">Descrizione</label>
+          <input type="text" name="descrizione" required placeholder="Es. Hotel, ingresso terme..." value="${isEdit ? escapeHtml(spesa.descrizione) : ''}" autofocus>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label class="field-label">Categoria (opzionale)</label>
+            <select name="categoriaId">
+              <option value="">Nessuna</option>
+              ${categorie.map((c) => `<option value="${c.id}" ${isEdit && spesa.categoriaId === c.id ? 'selected' : ''}>${escapeHtml(c.nome)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Collegata a una voce (opzionale)</label>
+            <select name="voceId">
+              <option value="">Nessuna, è una spesa generale della vacanza</option>
+              ${gruppiVoci
+                .map(
+                  (g) => `<optgroup label="${escapeHtml(g.titolo)}">
+                    ${g.opzioni.map((o) => `<option value="${o.id}" ${isEdit && spesa.voceId === o.id ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+                  </optgroup>`
+                )
+                .join('')}
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">Importo</label>
+          ${prezzoWidgetHtml('spesa', prezzoState, vacanzaNumeroPersone)}
+        </div>
+        <div class="inspector-footer">
+          <button type="submit" class="btn btn-primary">${isEdit ? 'Salva modifiche' : 'Aggiungi spesa'}</button>
+          <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
+        </div>
+      </form>`;
+
+    bindPrezzoWidgetEvents('spesa', prezzoState, renderStep);
+
+    document.getElementById('form-spesa').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const descrizione = (fd.get('descrizione') || '').trim();
+      if (!descrizione) return;
+      const payload = {
+        descrizione,
+        categoriaId: fd.get('categoriaId') || null,
+        voceId: fd.get('voceId') || null,
+        modalita: prezzoState.modalita,
+        importoTotale: fd.get('importoTotale'),
+        importoAPersona: fd.get('importoAPersona'),
+        importoDaDividere: fd.get('importoDaDividere'),
+        numeroPersone: prezzoState.numeroPersone,
+      };
+      if (isEdit) await repo.updateSpesa(spesa.id, payload);
+      else await repo.createSpesa({ vacanzaId: vacanza.id, ...payload });
+      closeInspector();
+      await renderCanvas();
+    });
+  }
+
+  renderStep();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Lista: form voce                                                        */
+/* ---------------------------------------------------------------------- */
+
+async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
+  const isEdit = !!voce;
+  const vacanza = await repo.getVacanza(vacanzaId);
+  const vacanzaNumeroPersone = vacanza.numeroPersone || 1;
+
+  let haCosto = isEdit ? !!voce.modalita : false;
+  const prezzoState = {
+    modalita: isEdit && voce.modalita ? voce.modalita : 'secco',
+    importoTotale: isEdit ? voce.importoTotale : null,
+    importoAPersona: isEdit ? voce.importoAPersona : null,
+    importoDaDividere: isEdit ? voce.importoDaDividere : null,
+    numeroPersone: isEdit ? voce.numeroPersone : null,
+    numeroPersoneEsplicito: isEdit && voce.numeroPersone != null ? voce.numeroPersone : vacanzaNumeroPersone,
+  };
+
+  openInspector(isEdit ? 'Modifica voce' : giornataId ? 'Nuova voce per questo giorno' : 'Nuova voce nella lista generale', `<div id="lista-voce-form-slot">Caricamento…</div>`);
+
+  function renderStep() {
+    const slot = document.getElementById('lista-voce-form-slot');
+    if (!slot) return;
+    slot.innerHTML = `
+      <form id="form-lista-voce">
+        <div class="field">
+          <label class="field-label">Cosa</label>
+          <input type="text" name="testo" required placeholder="Es. Scarpe da trekking" value="${isEdit ? escapeHtml(voce.testo) : ''}" autofocus>
+        </div>
+        <div class="field">
+          <label class="chip-checkbox">
+            <input type="checkbox" id="lista-ha-costo">
+            <span>Ha un costo</span>
+          </label>
+        </div>
+        ${
+          haCosto
+            ? `<div class="field">
+                <label class="field-label">Importo</label>
+                ${prezzoWidgetHtml('lista', prezzoState, vacanzaNumeroPersone)}
+              </div>
+              <div class="field">
+                <label class="chip-checkbox">
+                  <input type="checkbox" name="contaNelTotale" id="lista-conta-totale" ${!isEdit || voce.contaNelTotale !== false ? 'checked' : ''}>
+                  <span>Conta nel totale della vacanza (Budget → Extra)</span>
+                </label>
+              </div>`
+            : ''
+        }
+        <div class="inspector-footer">
+          <button type="submit" class="btn btn-primary">${isEdit ? 'Salva modifiche' : 'Aggiungi'}</button>
+          <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
+        </div>
+      </form>`;
+
+    document.getElementById('lista-ha-costo').checked = haCosto;
+    document.getElementById('lista-ha-costo').addEventListener('change', (e) => {
+      haCosto = e.target.checked;
+      renderStep();
+    });
+
+    if (haCosto) {
+      bindPrezzoWidgetEvents('lista', prezzoState, renderStep);
+    }
+
+    document.getElementById('form-lista-voce').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const testo = (fd.get('testo') || '').trim();
+      if (!testo) return;
+      const contaNelTotale = fd.get('contaNelTotale') === 'on';
+      const payload = {
+        testo,
+        modalita: haCosto ? prezzoState.modalita : null,
+        importoTotale: fd.get('importoTotale'),
+        importoAPersona: fd.get('importoAPersona'),
+        importoDaDividere: fd.get('importoDaDividere'),
+        numeroPersone: prezzoState.numeroPersone,
+        contaNelTotale: haCosto ? contaNelTotale : false,
+      };
+      if (isEdit) await repo.updateListaVoce(voce.id, payload);
+      else await repo.createListaVoce({ vacanzaId, giornataId, ...payload });
+      closeInspector();
+      await renderCanvas();
+    });
+  }
+
+  renderStep();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -2706,6 +3467,19 @@ function openCategoriaDestinazioneForm(categoria = null) {
     onSubmit: async (payload) => {
       if (isEdit) await repo.updateCategoriaDestinazione(categoria.id, payload);
       else await repo.createCategoriaDestinazione(payload);
+    },
+  });
+}
+
+function openCategoriaSpesaForm(categoria = null) {
+  const isEdit = !!categoria;
+  openNomeForm({
+    title: isEdit ? 'Modifica categoria spesa' : 'Nuova categoria spesa',
+    nome: isEdit ? categoria.nome : '',
+    submitLabel: isEdit ? 'Salva modifiche' : 'Crea categoria',
+    onSubmit: async (payload) => {
+      if (isEdit) await repo.updateCategoriaSpesa(categoria.id, payload);
+      else await repo.createCategoriaSpesa(payload);
     },
   });
 }

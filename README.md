@@ -1,7 +1,105 @@
-# Vacation Builder — v24 (fix mobile: safe-area, tab, card timeline)
+# Vacation Builder — v31 (fix: voci Lista mancanti nella stampa del Budget)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
 online per natura). Installabile come PWA.
+
+## Fix v31
+
+- **La stampa del Budget non includeva affatto le voci Lista con un costo** — il fix della v30
+  aveva sistemato solo la vista a schermo, non la generazione del PDF, che pescava ancora solo le
+  Spese vere e proprie. Ora la stampa mostra anche le voci Lista, etichettate **"da Lista"**
+  accanto a Condivisa/Extra, esattamente come già succede a schermo.
+
+## Novità v30
+
+- **Voci Lista con costo non comparivano sempre nella tabella Budget.** La tabella pescava solo
+  dall'elenco "Extra" del riepilogo, che esclude di proposito le voci "condivise" (quelle il cui
+  conteggio finisce già nel totale condiviso). Il numero contava comunque nel totale generale, ma
+  la riga spariva dalla vista — sembrava che il costo fosse stato ignorato, non lo era. Ora la
+  tabella elenca sempre tutte le voci Lista con un costo che conta, condivise o extra che siano,
+  con l'etichetta giusta accanto.
+- **Stampa della Lista**: se ci sono voci con un costo che conta nel totale, in cima compare ora
+  una nota — "i prezzi indicati qui sono già inclusi nel totale del Budget" — per non rischiare di
+  sommarli due volte leggendo i due fogli separatamente.
+
+## Novità v29
+
+- **"Totale a persona" nel riepilogo Budget arrotondato per eccesso**, come tutte le altre
+  divisioni: ora è sempre un numero tondo, mai con i centesimi.
+- **Stampa/PDF: scegli cosa includere ogni volta**. Il bottone "Stampa / PDF" ora apre prima un
+  piccolo pannello con tre spunte — Programma, Budget, Lista — così decidi tu volta per volta se
+  ti serve solo il piano, solo i conti, solo cosa portare, o tutto insieme.
+
+## Novità v28
+
+- **Bug reale in `updateListaVoce`**: a differenza di `updateSpesa`, non convertiva i valori del
+  form (sempre stringhe) in numeri prima di salvarli. Modificando una voce Lista con un costo, il
+  numero finiva salvato come testo ("50" invece di 50): al calcolo successivo, `.toFixed()` su una
+  stringa va in errore — esattamente quello che hai visto. Corretto: ora converte come si deve.
+- **Reso il calcolo resiliente anche in lettura**: se hai già una voce salvata con questo bug (dal
+  tempo prima di questa versione), ora si autocorregge da sola al primo ricalcolo, senza che tu
+  debba ricrearla da zero.
+
+## Novità v27
+
+- **La Lista ora usa esattamente la stessa logica della Spesa**: secco, a persona, o la nuova "da
+  dividere" — stessa struttura, stesso comportamento, nessuna differenza tra le due. Le vecchie
+  voci lista con un costo semplice sono migrate in automatico alla modalità "secco" equivalente,
+  nessun dato perso.
+- **Nuova modalità "Da dividere"**: inserisci il totale, viene diviso per il numero di persone.
+  La quota a testa è sempre arrotondata **per eccesso** (mai per difetto): 100€ ÷ 3 persone dà
+  34€ a testa, non 33€, così non ti ritrovi a fine vacanza con meno di quanto speso davvero. Il
+  totale che conta nel Budget resta comunque quello reale che hai inserito, non quello arrotondato
+  — l'arrotondamento è solo un riferimento per dividere i conti, non altera la spesa vera.
+- **Numero di persone che segue la vacanza**: di default, ogni spesa/voce "a persona" o "da
+  dividere" ha un interruttore "Segui il numero di persone della vacanza" acceso — se cambi il
+  numero di persone della vacanza (nel form di modifica), tutte le spese/voci in modalità
+  automatica si aggiornano da sole, senza doverle ritoccare una per una. Se lo spegni e scrivi un
+  numero tuo, quello resta fisso per sempre su quella voce specifica, qualunque cosa succeda alla
+  vacanza dopo. Un avviso compare solo se il numero che scrivi supera quello della vacanza (sotto
+  è normale, es. una spesa singola).
+- **Nota sulle spese già esistenti**: quelle create prima di questa versione avevano già un
+  numero di persone esplicito salvato — restano così (override fisso), non passano
+  retroattivamente alla modalità automatica. Puoi comunque modificarle e accendere l'interruttore
+  se preferisci.
+
+## Novità v26
+
+La pagina di ogni vacanza ora ha tre sotto-sezioni: **Programma** (quello che c'era già),
+**Budget** e **Lista**.
+
+- **Budget**: aggiungi spese come "totale secco" (es. hotel 1000€) o "a persona" (es. terme 45€ ×
+  1), collegabili opzionalmente a una tappa/spostamento specifico di un giorno, o lasciate
+  generali. Le spese "a persona" con lo stesso numero di persone della vacanza sono **condivise**
+  (danno un vero costo a testa); tutto il resto — spese secche, o "a persona" con un numero
+  diverso — finisce negli **Extra**, elencato voce per voce invece che schiacciato in una media
+  fuorviante. Categorie di spesa gestibili da Impostazioni, stesso pattern di
+  Categorie destinazioni/Tipi di tappa.
+- **Lista**: una lista generale per vacanza (la valigia) più una per ciascun giorno. Ogni voce ha
+  una spunta fatto/da fare e un costo opzionale; se c'è un costo, entra di default negli Extra del
+  Budget, con una spunta per escluderla.
+- **Numero di persone** sulla vacanza (nel form di modifica), usato per capire quali spese sono
+  davvero condivise.
+- Eliminando una voce del giorno che ha una spesa collegata, un avviso lo segnala prima di
+  procedere (prima l'eliminazione era sempre immediata, ora solo se non c'è nulla da perdere).
+
+Non incluso in questo giro, per restare nello scopo concordato: nessun riepilogo costi nel PDF di
+stampa (dimmi se lo vuoi, è un'aggiunta piccola) e nessuna gestione preventivo/scostamento
+(solo tracciamento di quanto pensi di spendere).
+
+## Novità v25
+
+- **Fix overflow nell'elenco Destinazioni**: una categoria con nome lungo poteva spingere la
+  freccetta fuori dalla card e far scorrere in orizzontale l'intero sito. Titolo ora con
+  ellissi se troppo lungo, badge categoria contenuti in un'area con scroll proprio invece di
+  allargare la riga. Aggiunta anche una rete di sicurezza generale (`overflow-x: hidden` sul
+  canvas) contro casi simili in futuro.
+- **Stampa / PDF**: nuovo bottone nella pagina Vacanza. Genera una vista pulita — recap
+  all'inizio (destinazione/i, alloggio/i, durata) e poi il programma giorno per giorno con
+  orari calcolati, nomi e note — e apre la finestra di stampa del browser, da cui si sceglie
+  "Salva come PDF" (o si stampa davvero). Nessuna libreria PDF aggiunta: sfrutta il motore di
+  stampa già integrato nel browser, più affidabile di qualunque libreria e senza dipendenze in
+  più da scaricare.
 
 ## Novità v24 — fix da screenshot reali su iPhone
 
