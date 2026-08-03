@@ -420,22 +420,22 @@ function renderVacanzeListResults() {
 }
 
 function vacCardHtml(v) {
+  const cover = v.immagini && v.immagini[0];
   return `<button class="item-card" data-action="select-vacanza" data-id="${v.id}">
-    <div class="item-card-cover-placeholder"></div>
+    ${cover ? `<img class="item-card-cover" src="${cover}" alt="">` : `<div class="item-card-cover-placeholder"></div>`}
     <div class="item-card-body">
       <div class="item-card-title">${escapeHtml(v.nome)}</div>
       <div class="item-card-meta">${v.durataGiorni} g${v.durataGiorni === 1 ? 'iorno' : 'iorni'}</div>
-      <div class="item-card-badges"><span class="badge-tipo-vacanza ${v.tipo}">${v.tipo === 'fissa' ? 'Un luogo' : 'Itinerante'}</span></div>
     </div>
   </button>`;
 }
 
 function vacRowHtml(v) {
+  const cover = v.immagini && v.immagini[0];
   return `<button class="item-row" data-action="select-vacanza" data-id="${v.id}">
-    <div class="item-row-thumb-placeholder"></div>
+    ${cover ? `<img class="item-row-thumb" src="${cover}" alt="">` : `<div class="item-row-thumb-placeholder"></div>`}
     <span class="item-row-title">${escapeHtml(v.nome)}</span>
     <span class="item-row-meta">${v.durataGiorni} g${v.durataGiorni === 1 ? 'iorno' : 'iorni'}</span>
-    <span class="item-row-badges"><span class="badge-tipo-vacanza ${v.tipo}">${v.tipo === 'fissa' ? 'Un luogo' : 'Itinerante'}</span></span>
     <span class="item-row-chevron"><i class="fa-solid fa-chevron-right"></i></span>
   </button>`;
 }
@@ -601,8 +601,9 @@ function computeOrariVoci(vociOrdinate) {
 }
 
 function defaultAlloggioTappaId(vacanza, giornata) {
-  if (vacanza.tipo === 'fissa') return vacanza.alloggioId || null;
-  return giornata ? giornata.alloggioId || null : null;
+  if (giornata && giornata.alloggioId) return giornata.alloggioId;
+  const pool = vacanza.alloggiIds || [];
+  return pool.length === 1 ? pool[0] : null;
 }
 function endingLocationId(voce, vacanza, giornata) {
   if (!voce) return null;
@@ -649,35 +650,15 @@ async function renderCanvasVacanze() {
     }
     return nameCacheLocal[id];
   }
-  const destCacheLocal = {};
-  async function destName(id) {
-    if (!id) return '—';
-    if (!destCacheLocal[id]) {
-      const d = await repo.getDestinazione(id);
-      destCacheLocal[id] = d ? d.nome : '—';
-    }
-    return destCacheLocal[id];
-  }
 
-  /* --- Alloggio: header per vacanza fissa, pool per vacanza itinerante --- */
-  let alloggioHeaderHtml = '';
-  if (vacanza.tipo === 'fissa') {
-    const nome = await tappaNome(vacanza.alloggioId);
-    alloggioHeaderHtml = vacanza.alloggioId
-      ? `<div class="page-note">Alloggio: <strong>${escapeHtml(nome || 'tappa eliminata')}</strong> · <button class="btn-inline-link" data-action="set-alloggio-vacanza">cambia</button></div>`
-      : `<button class="btn btn-sm btn-ghost" data-action="set-alloggio-vacanza" style="margin-top:8px;"><i class="fa-solid fa-plus"></i> Imposta alloggio</button>`;
-  }
-
-  let alloggiPoolHtml = '';
-  if (vacanza.tipo === 'itinerante') {
-    const poolIds = vacanza.alloggiIds || [];
-    const poolNames = await Promise.all(poolIds.map(async (id) => ({ id, nome: (await tappaNome(id)) || 'tappa eliminata' })));
-    alloggiPoolHtml = `<div class="alloggi-pool">
-      <span class="alloggi-pool-label">Alloggi di questa vacanza</span>
-      ${poolNames.map((a) => `<span class="alloggio-chip">${escapeHtml(a.nome)}<button data-action="remove-alloggio-pool" data-id="${a.id}" title="Rimuovi dal pool"><i class="fa-solid fa-xmark"></i></button></span>`).join('')}
-      <button class="btn btn-sm btn-ghost" data-action="add-alloggio-pool"><i class="fa-solid fa-plus"></i> Aggiungi alloggio</button>
-    </div>`;
-  }
+  /* --- Alloggio: sempre un pool tra cui scegliere giorno per giorno --- */
+  const poolIds = vacanza.alloggiIds || [];
+  const poolNames = await Promise.all(poolIds.map(async (id) => ({ id, nome: (await tappaNome(id)) || 'tappa eliminata' })));
+  const alloggiPoolHtml = `<div class="alloggi-pool">
+    <span class="alloggi-pool-label">Alloggi di questa vacanza</span>
+    ${poolNames.map((a) => `<span class="alloggio-chip">${escapeHtml(a.nome)}<button data-action="remove-alloggio-pool" data-id="${a.id}" title="Rimuovi dal pool"><i class="fa-solid fa-xmark"></i></button></span>`).join('')}
+    <button class="btn btn-sm btn-ghost" data-action="add-alloggio-pool"><i class="fa-solid fa-plus"></i> Aggiungi alloggio</button>
+  </div>`;
 
   const vTab = state.vacanzaTab || 'programma';
   const subTabsHtml = `<div class="settings-tabs vacanza-subtabs">
@@ -692,14 +673,19 @@ async function renderCanvasVacanze() {
     /* --- Tab dei giorni, trascinabili --- */
     const giorniTabs = await Promise.all(
       giornate.map(async (g, i) => {
-        const nome = await destName(g.destinazioneId);
+        const destGiorno = await repo.getDestinazioniGiorno(g.id);
         const active = g.id === state.selectedGiornataId ? 'is-active' : '';
-        const alloggioNome = vacanza.tipo === 'itinerante' && g.alloggioId ? await tappaNome(g.alloggioId) : null;
+        const alloggioNome = g.alloggioId ? await tappaNome(g.alloggioId) : null;
+        const data = repo.dataGiorno(vacanza, i);
         return `<div class="giorno-tab ${active}" draggable="true" data-id="${g.id}" data-action="select-giorno">
           <button class="card-delete" data-action="delete-giorno" data-id="${g.id}" title="Elimina giorno"><i class="fa-solid fa-trash-can"></i></button>
-          <div class="giorno-tab-label">Giorno ${i + 1}${alloggioNome ? `<span class="giorno-tab-alloggio"> – ${escapeHtml(alloggioNome)}</span>` : ''}</div>
-          ${g.data ? `<div class="giorno-tab-date">${formatDate(g.data)}</div>` : ''}
-          <div class="stamp"><span class="stamp-dot"></span>${escapeHtml(nome)}</div>
+          <div class="giorno-tab-label">Giorno ${i + 1}${data ? `<span class="giorno-tab-date"> · ${formatDate(data)}</span>` : ''}</div>
+          ${alloggioNome ? `<div class="giorno-tab-alloggio">${escapeHtml(alloggioNome)}</div>` : ''}
+          ${
+            destGiorno.length
+              ? `<div class="stamp">${escapeHtml(destGiorno.map((d) => d.nome).join(' · '))}</div>`
+              : `<div class="stamp stamp-vuoto">Nessuna tappa ancora</div>`
+          }
         </div>`;
       })
     );
@@ -711,18 +697,13 @@ async function renderCanvasVacanze() {
     if (giornoCorrente) {
       const vociGrezze = await repo.listVociByGiornata(giornoCorrente.id);
       const voci = computeOrariVoci(vociGrezze);
-      const nomeDestGiorno = await destName(giornoCorrente.destinazioneId);
 
-      const cambioDestBtn =
-        vacanza.tipo === 'itinerante'
-          ? `<button class="btn btn-sm btn-ghost" data-action="change-giorno-destinazione" data-id="${giornoCorrente.id}">Cambia destinazione</button>`
-          : '';
       let alloggioGiornoBtn = '';
-      if (vacanza.tipo === 'itinerante' && (vacanza.alloggiIds || []).length) {
+      if (poolIds.length) {
         const nome = giornoCorrente.alloggioId ? await tappaNome(giornoCorrente.alloggioId) : null;
         alloggioGiornoBtn = `<button class="btn btn-sm btn-ghost" data-action="set-alloggio-giorno" data-id="${giornoCorrente.id}">${nome ? `Alloggio: ${escapeHtml(nome)}` : 'Imposta alloggio del giorno'}</button>`;
       }
-      toolbarHtml = cambioDestBtn || alloggioGiornoBtn ? `<div class="giorno-toolbar">${cambioDestBtn}${alloggioGiornoBtn}</div>` : '';
+      toolbarHtml = alloggioGiornoBtn ? `<div class="giorno-toolbar">${alloggioGiornoBtn}</div>` : '';
 
       const gapHtml = (gapIndex) => `<div class="timeline-gap" data-gap-index="${gapIndex}">
         <button class="gap-plus" data-action="toggle-gap" data-gap-index="${gapIndex}" title="Inserisci qui"><i class="fa-solid fa-plus"></i></button>
@@ -738,7 +719,7 @@ async function renderCanvasVacanze() {
         timelineHtml = `<div class="timeline timeline-vuota">
           <div class="timeline-gap is-empty-state" data-gap-index="0">
             <button class="gap-plus" data-action="toggle-gap" data-gap-index="0" title="Aggiungi la prima voce"><i class="fa-solid fa-plus"></i></button>
-            <span class="timeline-gap-label">Aggiungi la prima voce del giorno · tappe disponibili solo da <strong>${escapeHtml(nomeDestGiorno)}</strong></span>
+            <span class="timeline-gap-label">Aggiungi la prima voce del giorno · scegli tappe da qualsiasi destinazione dell'archivio</span>
             <div class="gap-menu">
               <button data-action="insert-voce" data-voce-tipo="tappa" data-gap-index="0">Tappa</button>
               <button data-action="insert-voce" data-voce-tipo="partenza" data-gap-index="0">Partenza</button>
@@ -757,10 +738,15 @@ async function renderCanvasVacanze() {
       }
     }
 
+    const capGiorni = await repo.canAddGiorno(vacanza.id);
     tabContentHtml = `
       <div class="giorni-row">
         ${giorniTabs.join('')}
-        <button class="giorno-add-tab" data-action="add-giorno" title="Aggiungi giorno"><i class="fa-solid fa-plus"></i></button>
+        ${
+          capGiorni.ok
+            ? `<button class="giorno-add-tab" data-action="add-giorno" title="Aggiungi giorno"><i class="fa-solid fa-plus"></i></button>`
+            : `<div class="giorno-add-limite" title="La vacanza copre ${capGiorni.maxGiorni} giorni: allunga le date per pianificarne altri">${capGiorni.maxGiorni}/${capGiorni.maxGiorni}</div>`
+        }
       </div>
       ${toolbarHtml}
       ${timelineHtml}`;
@@ -770,16 +756,18 @@ async function renderCanvasVacanze() {
     tabContentHtml = await renderListaTabHtml(vacanza, giornate);
   }
 
+  const cover = vacanza.immagini && vacanza.immagini[0];
   canvas.innerHTML = `
     <div class="page">
       <button class="back-btn" data-action="back-to-vacanze"><i class="fa-solid fa-arrow-left"></i> Vacanze</button>
       <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Vacanza</div>
-          <div class="page-title">${escapeHtml(vacanza.nome)}</div>
-          <span class="badge-tipo-vacanza ${vacanza.tipo}">${vacanza.tipo === 'fissa' ? 'Un luogo' : 'Itinerante'}</span>
-          ${vacanza.dataInizio ? `<div class="page-note">${formatDate(vacanza.dataInizio)} → ${vacanza.dataFine ? formatDate(vacanza.dataFine) : '?'}</div>` : ''}
-          ${alloggioHeaderHtml}
+        <div class="page-header-main">
+          ${cover ? `<img class="cover-thumb" src="${cover}" alt="">` : ''}
+          <div>
+            <div class="page-eyebrow">Vacanza</div>
+            <div class="page-title">${escapeHtml(vacanza.nome)}</div>
+            ${vacanza.dataInizio ? `<div class="page-note">${formatDate(vacanza.dataInizio)} → ${vacanza.dataFine ? formatDate(vacanza.dataFine) : '?'}</div>` : ''}
+          </div>
         </div>
         <div class="page-header-actions">
           <button class="btn btn-ghost" data-action="stampa-vacanza"><i class="fa-solid fa-print"></i> Stampa / PDF</button>
@@ -1794,12 +1782,10 @@ async function handleCanvasClick(e) {
     state.selectedGiornataId = id;
     await renderCanvas();
   } else if (action === 'add-giorno') {
-    await openAddGiornoForm(await repo.getVacanza(state.selectedVacanzaId));
+    await handleAddGiorno(state.selectedVacanzaId);
   } else if (action === 'delete-giorno') {
     e.stopPropagation();
     await handleDeleteGiorno(id);
-  } else if (action === 'change-giorno-destinazione') {
-    await openChangeGiornoDestinazioneForm(id);
   } else if (action === 'toggle-gap') {
     const gapEl = el.closest('.timeline-gap');
     const wasOpen = gapEl.classList.contains('is-open');
@@ -1838,8 +1824,6 @@ async function handleCanvasClick(e) {
     }
     await repo.deleteVoce(id);
     await renderCanvas();
-  } else if (action === 'set-alloggio-vacanza') {
-    await openSetAlloggioVacanzaForm(await repo.getVacanza(state.selectedVacanzaId));
   } else if (action === 'add-alloggio-pool') {
     await openAddAlloggioPoolForm(await repo.getVacanza(state.selectedVacanzaId));
   } else if (action === 'remove-alloggio-pool') {
@@ -1887,16 +1871,16 @@ async function handleCanvasClick(e) {
 async function handleDeleteDestinazione(id) {
   const dest = await repo.getDestinazione(id);
   const usage = await repo.checkDestinazioneUsage(id);
-  let bodyHtml = `Questa destinazione verrà rimossa definitivamente dall'archivio.`;
-  if (usage.tappeCount > 0 || usage.giornateCount > 0 || usage.vacanzeCoinvolte.length > 0) {
+  let bodyHtml = `Questa destinazione e le sue tappe verranno rimosse definitivamente dall'archivio.`;
+  if (usage.tappeCount > 0 || usage.pianificateCount > 0 || usage.vacanzeCoinvolte.length > 0) {
     bodyHtml += `<div class="modal-usage-list">
       Contiene <strong>${usage.tappeCount}</strong> tapp${usage.tappeCount === 1 ? 'a' : 'e'}${
-      usage.giornateCount ? `, usata in <strong>${usage.giornateCount}</strong> giornat${usage.giornateCount === 1 ? 'a' : 'e'} pianificat${usage.giornateCount === 1 ? 'a' : 'e'}` : ''
+      usage.pianificateCount ? `, usata in <strong>${usage.pianificateCount}</strong> voce/i pianificat${usage.pianificateCount === 1 ? 'a' : 'e'}` : ''
     }.
       ${
         usage.vacanzeCoinvolte.length
-          ? `Vacanze coinvolte:<ul>${usage.vacanzeCoinvolte
-              .map((v) => `<li>${escapeHtml(v.nome)} — ${v.tipo === 'fissa' ? 'verrà eliminata interamente, essendo basata su questa destinazione' : 'ne verranno rimosse le giornate ambientate qui'}</li>`)
+          ? `Le vacanze coinvolte restano intatte, ma le voci collegate a queste tappe mostreranno "tappa eliminata":<ul>${usage.vacanzeCoinvolte
+              .map((v) => `<li>${escapeHtml(v.nome)}</li>`)
               .join('')}</ul>`
           : ''
       }
@@ -1994,44 +1978,30 @@ async function stampaVacanza(vacanzaId, sezioni = { programma: true, budget: fal
     const tipiList = await repo.listTipiTappa();
     const tipiById = Object.fromEntries(tipiList.map((t) => [t.id, t]));
 
-    async function nomeDestinazione(id) {
-      if (!id) return null;
-      const d = await repo.getDestinazione(id);
-      return d ? d.nome : null;
-    }
     async function nomeTappa(id) {
       if (!id) return null;
       const t = await repo.getTappa(id);
       return t ? t.nome : null;
     }
 
-    let recapHtml;
-    if (vacanza.tipo === 'fissa') {
-      const nome = await nomeDestinazione(vacanza.destinazionePrincipaleId);
-      const alloggio = await nomeTappa(vacanza.alloggioId);
-      recapHtml = `
-        <div><strong>Destinazione:</strong> ${escapeHtml(nome || '—')}</div>
-        ${alloggio ? `<div><strong>Alloggio:</strong> ${escapeHtml(alloggio)}</div>` : ''}
-        <div><strong>Durata:</strong> ${giornate.length} giorn${giornate.length === 1 ? 'o' : 'i'}</div>`;
-    } else {
-      const destIds = [...new Set(giornate.map((g) => g.destinazioneId).filter(Boolean))];
-      const nomiDest = (await Promise.all(destIds.map(nomeDestinazione))).filter(Boolean);
-      const nomiAlloggi = (await Promise.all((vacanza.alloggiIds || []).map(nomeTappa))).filter(Boolean);
-      recapHtml = `
-        <div><strong>Itinerario:</strong> ${escapeHtml(nomiDest.join(' → ') || '—')}</div>
-        ${nomiAlloggi.length ? `<div><strong>Alloggi:</strong> ${escapeHtml(nomiAlloggi.join(', '))}</div>` : ''}
-        <div><strong>Durata:</strong> ${giornate.length} giorn${giornate.length === 1 ? 'o' : 'i'}</div>`;
-    }
+    const destIds = await repo.listDestinazioneIdsUsateByVacanza(vacanzaId);
+    const nomiDest = (await Promise.all(destIds.map(async (id) => (await repo.getDestinazione(id))?.nome))).filter(Boolean);
+    const nomiAlloggi = (await Promise.all((vacanza.alloggiIds || []).map(nomeTappa))).filter(Boolean);
+    const recapHtml = `
+      <div><strong>Itinerario:</strong> ${escapeHtml(nomiDest.join(' → ') || '—')}</div>
+      ${nomiAlloggi.length ? `<div><strong>Alloggi:</strong> ${escapeHtml(nomiAlloggi.join(', '))}</div>` : ''}
+      <div><strong>Durata:</strong> ${giornate.length} giorn${giornate.length === 1 ? 'o' : 'i'}</div>`;
 
     const giorniHtml = [];
     for (let i = 0; i < giornate.length; i++) {
       const g = giornate[i];
       const voci = computeOrariVoci(await repo.listVociByGiornata(g.id));
-      const nomeDest = await nomeDestinazione(g.destinazioneId);
+      const destGiorno = await repo.getDestinazioniGiorno(g.id);
+      const data = repo.dataGiorno(vacanza, i);
       const vociHtml = await Promise.all(voci.map((v) => printVoceHtml(v, tipiById, nomeTappa)));
       giorniHtml.push(`
         <div class="print-giorno">
-          <div class="print-giorno-titolo">Giorno ${i + 1}${g.data ? ` — ${formatDate(g.data)}` : ''}${nomeDest ? ` · ${escapeHtml(nomeDest)}` : ''}</div>
+          <div class="print-giorno-titolo">Giorno ${i + 1}${data ? ` — ${formatDate(data)}` : ''}${destGiorno.length ? ` · ${escapeHtml(destGiorno.map((d) => d.nome).join(' · '))}` : ''}</div>
           ${vociHtml.length ? vociHtml.join('') : '<div class="print-voce-meta">Nessuna voce pianificata.</div>'}
         </div>`);
     }
@@ -2050,7 +2020,6 @@ async function stampaVacanza(vacanzaId, sezioni = { programma: true, budget: fal
   document.getElementById('print-area').innerHTML = `
     <div class="print-page">
       <div class="print-title">${escapeHtml(vacanza.nome)}</div>
-      <span class="print-badge">${vacanza.tipo === 'fissa' ? 'Un luogo' : 'Itinerante'}</span>
       ${vacanza.dataInizio ? `<div class="print-voce-meta">${formatDate(vacanza.dataInizio)} → ${vacanza.dataFine ? formatDate(vacanza.dataFine) : '?'}</div>` : ''}
       ${corpoHtml}
       <div class="print-footer">Generato da Vacation Builder — ${new Date().toLocaleDateString('it-IT')}</div>
@@ -2581,131 +2550,59 @@ async function openTappaForm(tappa = null) {
 /* ---------------------------------------------------------------------- */
 
 function openVacanzaForm(vacanza = null) {
-  if (vacanza) {
-    openInspector(
-      'Modifica vacanza',
-      `<form id="form-vacanza-edit">
-        <div class="field"><label class="field-label">Nome</label><input type="text" name="nome" required value="${escapeHtml(vacanza.nome)}"></div>
-        <div class="field-row">
-          <div class="field"><label class="field-label">Data inizio</label><input type="date" name="dataInizio" value="${vacanza.dataInizio || ''}"></div>
-          <div class="field"><label class="field-label">Data fine</label><input type="date" name="dataFine" value="${vacanza.dataFine || ''}"></div>
-        </div>
-        <div class="field">
-          <label class="field-label">Numero di persone</label>
-          <input type="number" name="numeroPersone" min="1" step="1" value="${vacanza.numeroPersone || 1}">
-          <div class="hint">Usato nel Budget per capire quali spese sono davvero condivise da tutto il gruppo.</div>
-        </div>
-        <div class="hint">Tipo e destinazione principale non sono modificabili dopo la creazione, per non lasciare giornate orfane: se serve cambiarli, crea una nuova vacanza.</div>
-        <div class="inspector-footer">
-          <button type="submit" class="btn btn-primary">Salva modifiche</button>
-          <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
-        </div>
-      </form>`
-    );
-    document.getElementById('form-vacanza-edit').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      await repo.updateVacanza(vacanza.id, { nome: fd.get('nome'), dataInizio: fd.get('dataInizio'), dataFine: fd.get('dataFine'), numeroPersone: fd.get('numeroPersone') });
-      closeInspector();
-      await renderCanvas();
-    });
-    return;
-  }
+  const isEdit = !!vacanza;
+  const currentImages = isEdit ? [...(vacanza.immagini || [])] : [];
 
-  let tipo = 'fissa';
-  openInspector('Nuova vacanza', `<div id="vacanza-form-slot">Caricamento…</div>`);
+  openInspector(
+    isEdit ? 'Modifica vacanza' : 'Nuova vacanza',
+    `<form id="form-vacanza">
+      <div class="field">
+        <label class="field-label">Nome vacanza</label>
+        <input type="text" name="nome" required placeholder="Es. Estate a Pantelleria" value="${isEdit ? escapeHtml(vacanza.nome) : ''}" autofocus>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-label">Data inizio (opzionale)</label><input type="date" name="dataInizio" value="${isEdit ? vacanza.dataInizio || '' : ''}"></div>
+        <div class="field"><label class="field-label">Data fine (opzionale)</label><input type="date" name="dataFine" value="${isEdit ? vacanza.dataFine || '' : ''}"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">Numero di persone</label>
+        <input type="number" name="numeroPersone" min="1" step="1" value="${isEdit ? vacanza.numeroPersone || 1 : 1}">
+        <div class="hint">Usato nel Budget per capire quali spese sono davvero condivise da tutto il gruppo, e per limitare quanti giorni puoi pianificare se imposti entrambe le date.</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Foto</label>
+        <div id="gallery-vacanza"></div>
+      </div>
+      <div class="inspector-footer">
+        <button type="submit" class="btn btn-primary">${isEdit ? 'Salva modifiche' : 'Crea vacanza'}</button>
+        <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
+      </div>
+    </form>`
+  );
 
-  repo.listDestinazioni().then((destinazioni) => {
-    renderStep();
+  mountPhotoGallery('gallery-vacanza', currentImages);
 
-    function renderStep() {
-      const slot = document.getElementById('vacanza-form-slot');
-      if (!slot) return;
-      slot.innerHTML = `
-        <form id="form-vacanza">
-          <div class="field">
-            <label class="field-label">Nome vacanza</label>
-            <input type="text" name="nome" required placeholder="Es. Estate a Pantelleria" autofocus>
-          </div>
-          <div class="field">
-            <label class="field-label">Tipologia</label>
-            <div class="type-toggle" id="tipo-vacanza-toggle">
-              <button type="button" class="type-toggle-btn ${tipo === 'fissa' ? 'is-selected' : ''}" data-tipo="fissa">
-                <div class="type-toggle-title">Un luogo</div>
-                <div class="type-toggle-sub">Una destinazione base, più giornate</div>
-              </button>
-              <button type="button" class="type-toggle-btn ${tipo === 'itinerante' ? 'is-selected' : ''}" data-tipo="itinerante">
-                <div class="type-toggle-title">Itinerante</div>
-                <div class="type-toggle-sub">Destinazione libera giorno per giorno</div>
-              </button>
-            </div>
-          </div>
-          ${
-            tipo === 'fissa'
-              ? `<div class="field">
-                  <label class="field-label">Destinazione principale</label>
-                  ${
-                    destinazioni.length
-                      ? `<div class="dest-picker" id="dest-picker">${destinazioni.map((d) => `<button type="button" class="dest-picker-btn" data-dest="${d.id}">${escapeHtml(d.nome)}</button>`).join('')}</div><input type="hidden" name="destinazionePrincipaleId">`
-                      : `<div class="hint">Non hai ancora destinazioni nell'archivio. Crea prima una destinazione dalla sezione "Destinazioni".</div>`
-                  }
-                </div>`
-              : `<div class="hint">Sceglierai la destinazione di ogni singola giornata direttamente nel planner, una volta creata la vacanza.</div>`
-          }
-          <div class="field-row">
-            <div class="field"><label class="field-label">Data inizio (opzionale)</label><input type="date" name="dataInizio"></div>
-            <div class="field"><label class="field-label">Data fine (opzionale)</label><input type="date" name="dataFine"></div>
-          </div>
-          <div class="field">
-            <label class="field-label">Numero di persone</label>
-            <input type="number" name="numeroPersone" min="1" step="1" value="1">
-          </div>
-          <div class="inspector-footer">
-            <button type="submit" class="btn btn-primary">Crea vacanza</button>
-            <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
-          </div>
-        </form>`;
-
-      document.getElementById('tipo-vacanza-toggle').addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-tipo]');
-        if (!btn) return;
-        tipo = btn.dataset.tipo;
-        renderStep();
-      });
-
-      const destPicker = document.getElementById('dest-picker');
-      if (destPicker) {
-        destPicker.addEventListener('click', (e) => {
-          const btn = e.target.closest('[data-dest]');
-          if (!btn) return;
-          destPicker.querySelectorAll('.dest-picker-btn').forEach((b) => b.classList.toggle('is-selected', b === btn));
-          document.querySelector('#form-vacanza input[name=destinazionePrincipaleId]').value = btn.dataset.dest;
-        });
-      }
-
-      document.getElementById('form-vacanza').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const fd = new FormData(e.target);
-        const nome = (fd.get('nome') || '').trim();
-        if (!nome) return;
-        if (tipo === 'fissa' && !fd.get('destinazionePrincipaleId')) {
-          await showModal({ title: 'Manca la destinazione', bodyHtml: 'Scegli la destinazione principale della vacanza.', confirmLabel: 'Ho capito' });
-          return;
-        }
-        const created = await repo.createVacanza({
-          nome,
-          tipo,
-          destinazionePrincipaleId: tipo === 'fissa' ? fd.get('destinazionePrincipaleId') : null,
-          dataInizio: fd.get('dataInizio') || '',
-          dataFine: fd.get('dataFine') || '',
-          numeroPersone: fd.get('numeroPersone') || 1,
-        });
-        state.selectedVacanzaId = created.id;
-        state.selectedGiornataId = null;
-        closeInspector();
-        await renderCanvas();
-      });
+  document.getElementById('form-vacanza').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const nome = (fd.get('nome') || '').trim();
+    if (!nome) return;
+    const payload = {
+      nome,
+      dataInizio: fd.get('dataInizio') || '',
+      dataFine: fd.get('dataFine') || '',
+      numeroPersone: fd.get('numeroPersone') || 1,
+      immagini: currentImages,
+    };
+    if (isEdit) {
+      await repo.updateVacanza(vacanza.id, payload);
+    } else {
+      const created = await repo.createVacanza(payload);
+      state.selectedVacanzaId = created.id;
+      state.selectedGiornataId = null;
     }
+    closeInspector();
+    await renderCanvas();
   });
 }
 
@@ -2967,68 +2864,14 @@ async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
 /* Form: aggiunta / cambio giorno                                          */
 /* ---------------------------------------------------------------------- */
 
-async function openAddGiornoForm(vacanza) {
-  if (vacanza.tipo === 'fissa') {
-    const g = await repo.addGiornata(vacanza.id, vacanza.destinazionePrincipaleId);
+async function handleAddGiorno(vacanzaId) {
+  try {
+    const g = await repo.addGiornata(vacanzaId);
     state.selectedGiornataId = g.id;
     await renderCanvas();
-    return;
+  } catch (err) {
+    await showModal({ title: 'Non posso aggiungere altri giorni', bodyHtml: escapeHtml(err.message), confirmLabel: 'Ho capito' });
   }
-  const destinazioni = await repo.listDestinazioni();
-  if (!destinazioni.length) {
-    await showModal({ title: 'Nessuna destinazione disponibile', bodyHtml: "Crea prima almeno una destinazione nell'archivio.", confirmLabel: 'Ho capito' });
-    return;
-  }
-  openInspector(
-    'Nuovo giorno',
-    `<div class="hint">Scegli la destinazione di questa giornata. Potrai pianificare solo le tappe che appartengono a questa destinazione.</div>
-    <div class="dest-picker" id="dest-picker-giorno">
-      ${destinazioni.map((d) => `<button type="button" class="dest-picker-btn" data-dest="${d.id}">${escapeHtml(d.nome)}</button>`).join('')}
-    </div>
-    <div class="inspector-footer"><button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button></div>`
-  );
-  document.getElementById('dest-picker-giorno').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-dest]');
-    if (!btn) return;
-    const g = await repo.addGiornata(vacanza.id, btn.dataset.dest);
-    state.selectedGiornataId = g.id;
-    closeInspector();
-    await renderCanvas();
-  });
-}
-
-async function openChangeGiornoDestinazioneForm(giornataId) {
-  const giornata = await repo.getGiornata(giornataId);
-  const destinazioni = await repo.listDestinazioni();
-  const pianificate = await repo.listVociByGiornata(giornataId);
-
-  openInspector(
-    'Cambia destinazione del giorno',
-    `<div class="hint">Le tappe pianificate appartengono sempre alla destinazione della giornata: cambiandola, le ${pianificate.length} tapp${pianificate.length === 1 ? 'a' : 'e'} già pianificat${pianificate.length === 1 ? 'a' : 'e'} per questo giorno verrann${pianificate.length === 1 ? 'à' : 'o'} rimoss${pianificate.length === 1 ? 'a' : 'e'}.</div>
-    <div class="dest-picker" id="dest-picker-cambio">
-      ${destinazioni.map((d) => `<button type="button" class="dest-picker-btn ${d.id === giornata.destinazioneId ? 'is-selected' : ''}" data-dest="${d.id}">${escapeHtml(d.nome)}</button>`).join('')}
-    </div>
-    <div class="inspector-footer"><button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button></div>`
-  );
-
-  document.getElementById('dest-picker-cambio').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-dest]');
-    if (!btn) return;
-    const newDest = btn.dataset.dest;
-    closeInspector();
-    if (newDest === giornata.destinazioneId) return;
-    if (pianificate.length) {
-      const ok = await showModal({
-        title: 'Confermi il cambio?',
-        bodyHtml: `Le ${pianificate.length} tappe pianificate per questo giorno verranno rimosse.`,
-        confirmLabel: 'Cambia e rimuovi',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    await repo.updateGiornataDestinazione(giornataId, newDest);
-    await renderCanvas();
-  });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -3037,27 +2880,50 @@ async function openChangeGiornoDestinazioneForm(giornataId) {
 
 async function openVoceTappaForm(giornata, voce = null, atIndex = null) {
   const isEdit = !!voce;
-  const tappe = await repo.listTappeByDestinazione(giornata.destinazioneId);
+  const destinazioni = await repo.listDestinazioni();
+  const tutteTappe = await repo.listTappe();
   const tipiList = await repo.listTipiTappa();
   const tipiById = Object.fromEntries(tipiList.map((t) => [t.id, t]));
-  if (!tappe.length) {
+  if (!tutteTappe.length) {
     await showModal({
       title: 'Nessuna tappa disponibile',
-      bodyHtml: `La destinazione di questo giorno non ha ancora tappe. Aggiungile dalla sezione "Destinazioni" prima di pianificare.`,
+      bodyHtml: `Non hai ancora tappe nell'archivio. Aggiungile dalla sezione "Destinazioni" prima di pianificare.`,
       confirmLabel: 'Ho capito',
     });
     return;
   }
-  const tappeById = Object.fromEntries(tappe.map((t) => [t.id, t]));
-  const permanenzaIniziale = isEdit ? voce.permanenzaMin ?? '' : tappeById[tappe[0].id]?.durataConsigliataMin ?? '';
+  const tappeById = Object.fromEntries(tutteTappe.map((t) => [t.id, t]));
+  const destById = Object.fromEntries(destinazioni.map((d) => [d.id, d]));
+  const filtroIniziale = isEdit && tappeById[voce.tappaId] ? tappeById[voce.tappaId].destinazioneId || '' : '';
+
+  function opzioniTappe(filtroDestId) {
+    const filtrate = filtroDestId ? tutteTappe.filter((t) => t.destinazioneId === filtroDestId) : tutteTappe;
+    return filtrate
+      .map((t) => {
+        const tipo = tipiById[(t.tipi || [])[0]];
+        const destNome = destById[t.destinazioneId] ? destById[t.destinazioneId].nome : '';
+        return `<option value="${t.id}" ${isEdit && voce.tappaId === t.id ? 'selected' : ''}>${escapeHtml(tipo ? tipo.nome : '')} — ${escapeHtml(t.nome)}${!filtroDestId ? ` · ${escapeHtml(destNome)}` : ''}</option>`;
+      })
+      .join('');
+  }
+
+  const primaTappaFiltrata = (filtroIniziale ? tutteTappe.filter((t) => t.destinazioneId === filtroIniziale) : tutteTappe)[0];
+  const permanenzaIniziale = isEdit ? voce.permanenzaMin ?? '' : primaTappaFiltrata?.durataConsigliataMin ?? '';
 
   openInspector(
     isEdit ? 'Modifica tappa pianificata' : 'Pianifica una tappa',
     `<form id="form-voce-tappa">
       <div class="field">
+        <label class="field-label">Filtra per destinazione (opzionale)</label>
+        <select id="voce-tappa-filtro">
+          <option value="">Tutte le destinazioni</option>
+          ${destinazioni.map((d) => `<option value="${d.id}" ${filtroIniziale === d.id ? 'selected' : ''}>${escapeHtml(d.nome)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
         <label class="field-label">Tappa</label>
         <select name="tappaId" id="voce-tappa-select" required>
-          ${tappe.map((t) => `<option value="${t.id}" ${isEdit && voce.tappaId === t.id ? 'selected' : ''}>${escapeHtml(tipiById[(t.tipi || [])[0]] ? tipiById[(t.tipi || [])[0]].nome : '')} — ${escapeHtml(t.nome)}</option>`).join('')}
+          ${opzioniTappe(filtroIniziale)}
         </select>
       </div>
       <div class="field-row">
@@ -3081,6 +2947,10 @@ async function openVoceTappaForm(giornata, voce = null, atIndex = null) {
       </div>
     </form>`
   );
+
+  document.getElementById('voce-tappa-filtro').addEventListener('change', (e) => {
+    document.getElementById('voce-tappa-select').innerHTML = opzioniTappe(e.target.value);
+  });
 
   if (!isEdit) {
     // Cambiando tappa, propone la sua durata consigliata come permanenza di partenza
@@ -3342,31 +3212,10 @@ async function openVoceSpostamentoForm(giornata, vacanza, voce = null, atIndex =
 /* Form: gestione alloggi                                                  */
 /* ---------------------------------------------------------------------- */
 
-async function openSetAlloggioVacanzaForm(vacanza) {
-  const alloggi = await repo.listTappeAlloggio();
-  if (!alloggi.length) {
-    await showModal({ title: 'Nessun alloggio disponibile', bodyHtml: 'Crea prima una tappa di tipo Alloggio in una destinazione dell\'archivio.', confirmLabel: 'Ho capito' });
-    return;
-  }
-  openInspector(
-    'Alloggio della vacanza',
-    `<div class="dest-picker" id="picker-alloggio-vacanza">
-      ${vacanza.alloggioId ? `<button type="button" class="dest-picker-btn" data-alloggio="">Nessun alloggio</button>` : ''}
-      ${alloggi.map((a) => `<button type="button" class="dest-picker-btn ${vacanza.alloggioId === a.id ? 'is-selected' : ''}" data-alloggio="${a.id}">${escapeHtml(a.nome)}</button>`).join('')}
-    </div>
-    <div class="inspector-footer"><button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button></div>`
-  );
-  document.getElementById('picker-alloggio-vacanza').addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-alloggio]');
-    if (!btn) return;
-    await repo.setVacanzaAlloggio(vacanza.id, btn.dataset.alloggio || null);
-    closeInspector();
-    await renderCanvas();
-  });
-}
-
 async function openAddAlloggioPoolForm(vacanza) {
   const alloggi = await repo.listTappeAlloggio();
+  const destinazioni = await repo.listDestinazioni();
+  const destById = Object.fromEntries(destinazioni.map((d) => [d.id, d]));
   const pool = new Set(vacanza.alloggiIds || []);
   const disponibili = alloggi.filter((a) => !pool.has(a.id));
   if (!disponibili.length) {
@@ -3377,13 +3226,33 @@ async function openAddAlloggioPoolForm(vacanza) {
     });
     return;
   }
+  const destUsate = destinazioni.filter((d) => disponibili.some((a) => a.destinazioneId === d.id));
   openInspector(
     'Aggiungi alloggio alla vacanza',
-    `<div class="dest-picker" id="picker-alloggio-pool">
-      ${disponibili.map((a) => `<button type="button" class="dest-picker-btn" data-alloggio="${a.id}">${escapeHtml(a.nome)}</button>`).join('')}
+    `${
+      destUsate.length > 1
+        ? `<div class="field">
+            <label class="field-label">Filtra per destinazione (opzionale)</label>
+            <select id="filtro-dest-alloggio-pool">
+              <option value="">Tutte le destinazioni</option>
+              ${destUsate.map((d) => `<option value="${d.id}">${escapeHtml(d.nome)}</option>`).join('')}
+            </select>
+          </div>`
+        : ''
+    }
+    <div class="dest-picker" id="picker-alloggio-pool">
+      ${disponibili.map((a) => `<button type="button" class="dest-picker-btn" data-alloggio="${a.id}" data-dest="${a.destinazioneId || ''}">${escapeHtml(a.nome)}${destUsate.length > 1 ? ` <span class="dest-picker-sub">${escapeHtml(destById[a.destinazioneId] ? destById[a.destinazioneId].nome : '')}</span>` : ''}</button>`).join('')}
     </div>
     <div class="inspector-footer"><button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button></div>`
   );
+  const filtro = document.getElementById('filtro-dest-alloggio-pool');
+  if (filtro) {
+    filtro.addEventListener('change', () => {
+      document.querySelectorAll('#picker-alloggio-pool [data-alloggio]').forEach((btn) => {
+        btn.style.display = !filtro.value || btn.dataset.dest === filtro.value ? '' : 'none';
+      });
+    });
+  }
   document.getElementById('picker-alloggio-pool').addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-alloggio]');
     if (!btn) return;

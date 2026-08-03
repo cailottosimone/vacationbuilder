@@ -348,11 +348,11 @@ a { color: var(--blue); }
 
 .stamp {
   display: inline-flex; align-items: center; gap: 5px;
-  margin-top: 9px; padding: 4px 10px 4px 8px;
+  margin-top: 9px; padding: 4px 10px;
   border-radius: 20px; font-size: 10.5px; font-weight: 700;
   background: var(--blue-soft); color: var(--blue-dark);
 }
-.stamp-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--blue); flex-shrink: 0; }
+.stamp-vuoto { background: var(--surface-soft); color: var(--text-faint); font-weight: 500; font-style: italic; }
 
 .giorno-add-tab {
   flex-shrink: 0; min-width: 56px;
@@ -361,6 +361,14 @@ a { color: var(--blue); }
   transition: border-color 0.15s ease, color 0.15s ease;
 }
 .giorno-add-tab:hover { border-color: var(--blue); color: var(--blue); }
+.giorno-add-limite {
+  flex-shrink: 0; min-width: 56px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border); border-radius: var(--radius-m);
+  background: var(--surface-soft); color: var(--text-faint);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  cursor: help;
+}
 
 .giorno-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin: 4px 0 16px; flex-wrap: wrap; }
 
@@ -504,6 +512,7 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 .dest-picker { display: flex; flex-direction: column; gap: 8px; }
 .dest-picker-btn { text-align: left; padding: 11px 14px; border-radius: var(--radius-s); border: 1.5px solid var(--border); background: var(--surface); font-size: 13.5px; }
 .dest-picker-btn.is-selected { border-color: var(--blue); background: var(--blue-soft); font-weight: 700; }
+.dest-picker-sub { display: block; font-size: 11px; color: var(--text-faint); font-weight: 500; margin-top: 2px; }
 
 .type-toggle { display: flex; gap: 8px; }
 .type-toggle-btn { flex: 1; padding: 13px; border-radius: var(--radius-m); border: 1.5px solid var(--border); background: var(--surface); text-align: left; }

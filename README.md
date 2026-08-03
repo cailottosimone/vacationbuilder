@@ -1,9 +1,43 @@
-# Vacation Builder — v31 (fix: voci Lista mancanti nella stampa del Budget)
+# Vacation Builder — v32 (vacanza unica, tappe cross-destinazione, giorni con data e limite)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
 online per natura). Installabile come PWA.
 
-## Fix v31
+## Novità v32 — revisione importante del modello
+
+- **Via la distinzione "Un luogo" / "Itinerante"**: ora c'è solo Vacanza. Un giorno non ha più
+  una destinazione fissata a monte: le destinazioni "toccate" da un giorno si deducono da quali
+  tappe ci pianifichi dentro. Puoi benissimo avere una tappa a metà strada da una destinazione
+  diversa da quella principale — esattamente il caso della sosta a 3 ore che citavi.
+- **Le tappe si scelgono ora da qualsiasi destinazione dell'archivio**, con un filtro per
+  destinazione sopra il selettore (di base "tutte", puoi restringere). Stesso filtro aggiunto
+  anche nel selettore degli alloggi del pool.
+- **Alloggi sempre a pool** (scelta per giorno), unificato per tutte le vacanze — prima era un
+  meccanismo diverso per "un luogo" e "itinerante".
+- **Giorni limitati alle date**: se imposti sia data di inizio sia data di fine della vacanza,
+  non puoi pianificare più giorni di quanti ce ne stiano nel periodo — il bottone "+" diventa
+  un indicatore "N/N" quando raggiungi il limite.
+- **Data calcolata per ogni giorno**: se hai impostato la data di inizio, "Giorno N" mostra
+  sempre anche la data (dedotta automaticamente, non più da inserire a mano).
+- **Foto sulla Vacanza**: galleria + copertina, stesso meccanismo di Destinazioni e Tappe.
+
+## Effetti collaterali di questa revisione, da sapere
+
+- **Eliminare una Destinazione ora è meno distruttivo**: prima, cancellare la destinazione di
+  una vacanza "un luogo" cancellava l'intera vacanza. Ora, dato che un giorno può toccare più
+  destinazioni insieme, eliminando una destinazione si eliminano solo le sue tappe — le vacanze e
+  i giorni restano intatti, le voci che referenziavano quelle tappe mostrano "tappa eliminata"
+  (stesso comportamento già in uso per l'eliminazione di una singola tappa).
+- **Vacanze esistenti**: quelle già create restano perfettamente funzionanti. Il vecchio campo
+  "tipo" (fissa/itinerante) semplicemente non viene più letto; gli alloggi di una vecchia vacanza
+  "un luogo" andranno reimpostati nel pool se vuoi che tornino a comparire (prima erano in un
+  campo separato, ora tutto passa dal pool).
+- **Niente più data manuale per un singolo giorno**: prima esisteva un campo dedicato (mai
+  esposto in interfaccia, in realtà) — ora la data si calcola sempre dalla data di inizio della
+  vacanza più la posizione del giorno, un'unica fonte di verità invece di due valori che
+  potevano disallinearsi.
+
+## Novità v31
 
 - **La stampa del Budget non includeva affatto le voci Lista con un costo** — il fix della v30
   aveva sistemato solo la vista a schermo, non la generazione del PDF, che pescava ancora solo le

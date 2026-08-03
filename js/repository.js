@@ -146,51 +146,56 @@ export async function checkDestinazioneUsage(id) {
   const tappe = await Store.getAllByIndex('tappe', 'destinazioneId', id);
   const tappaIds = new Set(tappe.map((t) => t.id));
 
-  const giornate = await Store.getAllByIndex('giornate', 'destinazioneId', id);
-
   const tuttePianificate = await Store.getAll('tappePianificate');
-  const pianificateCoinvolte = tuttePianificate.filter((p) => tappaIds.has(p.tappaId) || giornate.some((g) => g.id === p.giornataId));
+  const pianificateCoinvolte = tuttePianificate.filter((p) => tappaIds.has(p.tappaId) || tappaIds.has(p.daRifTappaId) || tappaIds.has(p.aRifTappaId));
 
-  const vacanzeIds = new Set(giornate.map((g) => g.vacanzaId));
+  const giornataIds = new Set(pianificateCoinvolte.map((p) => p.giornataId));
+  const tutteGiornate = await Store.getAll('giornate');
+  tutteGiornate.forEach((g) => {
+    if (g.alloggioId && tappaIds.has(g.alloggioId)) giornataIds.add(g.id);
+  });
+  const giornateCoinvolte = tutteGiornate.filter((g) => giornataIds.has(g.id));
+
+  const vacanzeIds = new Set(giornateCoinvolte.map((g) => g.vacanzaId));
   const tutteVacanze = await Store.getAll('vacanze');
-  const vacanzeFisseCollegate = tutteVacanze.filter((v) => v.tipo === 'fissa' && v.destinazionePrincipaleId === id);
-  vacanzeFisseCollegate.forEach((v) => vacanzeIds.add(v.id));
+  tutteVacanze.forEach((v) => {
+    if ((v.alloggiIds || []).some((aid) => tappaIds.has(aid))) vacanzeIds.add(v.id);
+  });
   const vacanzeCoinvolte = tutteVacanze.filter((v) => vacanzeIds.has(v.id));
 
   return {
     tappeCount: tappe.length,
-    giornateCount: giornate.length,
+    giornateCount: giornateCoinvolte.length,
     pianificateCount: pianificateCoinvolte.length,
     vacanzeCoinvolte,
   };
 }
 
+/** Elimina la destinazione e le sue tappe. Le vacanze/giorni che le avevano pianificate NON
+ * vengono toccati: le voci che referenziavano quelle tappe restano (mostrate come "tappa
+ * eliminata" in UI, come già succede eliminando una singola tappa) — un giorno può toccare più
+ * destinazioni insieme, quindi cancellarne una non deve far sparire tutto il resto del giorno. */
 export async function deleteDestinazioneCascade(id) {
   const tappe = await Store.getAllByIndex('tappe', 'destinazioneId', id);
   const tappaIds = new Set(tappe.map((t) => t.id));
 
-  const giornate = await Store.getAllByIndex('giornate', 'destinazioneId', id);
-  const giornataIds = new Set(giornate.map((g) => g.id));
-
-  const tuttePianificate = await Store.getAll('tappePianificate');
-  for (const p of tuttePianificate) {
-    if (tappaIds.has(p.tappaId) || giornataIds.has(p.giornataId)) {
-      await Store.delete('tappePianificate', p.id);
+  // Pulisce i riferimenti negli alloggi (pool vacanza + scelta del giorno), altrimenti
+  // resterebbero id "fantasma" che puntano a una tappa non più esistente.
+  const tutteVacanze = await Store.getAll('vacanze');
+  for (const v of tutteVacanze) {
+    if ((v.alloggiIds || []).some((aid) => tappaIds.has(aid))) {
+      v.alloggiIds = v.alloggiIds.filter((aid) => !tappaIds.has(aid));
+      v.updatedAt = nowISO();
+      await Store.put('vacanze', v);
     }
   }
-
-  for (const g of giornate) await Store.delete('giornate', g.id);
-
-  const tutteVacanze = await Store.getAll('vacanze');
-  const vacanzeFisseCollegate = tutteVacanze.filter((v) => v.tipo === 'fissa' && v.destinazionePrincipaleId === id);
-  for (const v of vacanzeFisseCollegate) {
-    const altreGiornate = await Store.getAllByIndex('giornate', 'vacanzaId', v.id);
-    for (const g of altreGiornate) {
-      const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', g.id);
-      for (const p of pian) await Store.delete('tappePianificate', p.id);
-      await Store.delete('giornate', g.id);
+  const tutteGiornate = await Store.getAll('giornate');
+  for (const g of tutteGiornate) {
+    if (g.alloggioId && tappaIds.has(g.alloggioId)) {
+      g.alloggioId = null;
+      g.updatedAt = nowISO();
+      await Store.put('giornate', g);
     }
-    await Store.delete('vacanze', v.id);
   }
 
   for (const t of tappe) await Store.delete('tappe', t.id);
@@ -203,6 +208,13 @@ export async function deleteDestinazioneCascade(id) {
 
 export async function listTappeByDestinazione(destinazioneId) {
   const list = await Store.getAllByIndex('tappe', 'destinazioneId', destinazioneId);
+  return list.sort((a, b) => a.nome.localeCompare(b.nome, 'it'));
+}
+
+/** Tutte le tappe dell'archivio, indipendentemente dalla destinazione (per i selettori che
+ * lasciano scegliere tra tutte le destinazioni, con un filtro lato interfaccia). */
+export async function listTappe() {
+  const list = await Store.getAll('tappe');
   return list.sort((a, b) => a.nome.localeCompare(b.nome, 'it'));
 }
 
@@ -316,48 +328,36 @@ export async function getVacanza(id) {
   return Store.get('vacanze', id);
 }
 
-export async function createVacanza({ nome, tipo, destinazionePrincipaleId = null, dataInizio = '', dataFine = '', numeroPersone = 1 }) {
+export async function createVacanza({ nome, dataInizio = '', dataFine = '', numeroPersone = 1 }) {
   const record = {
     id: uuid(),
     nome: nome.trim(),
-    tipo, // 'fissa' | 'itinerante'
-    destinazionePrincipaleId: tipo === 'fissa' ? destinazionePrincipaleId : null,
-    alloggioId: null, // vacanze "fisse": un solo alloggio per tutta la vacanza
-    alloggiIds: tipo === 'itinerante' ? [] : null, // vacanze itineranti: pool di alloggi tra cui scegliere giorno per giorno
+    alloggiIds: [], // pool di alloggi tra cui scegliere giorno per giorno
     dataInizio,
     dataFine,
     numeroPersone: Number(numeroPersone) || 1,
+    immagini: [],
     createdAt: nowISO(),
     updatedAt: nowISO(),
   };
   const saved = await Store.put('vacanze', record);
-  if (tipo === 'fissa' && destinazionePrincipaleId) {
-    await addGiornata(saved.id, destinazionePrincipaleId);
-  }
+  await addGiornata(saved.id); // si parte sempre con almeno un giorno, vuoto: le destinazioni si capiscono da quel che ci pianifichi dentro
   return saved;
 }
 
-export async function updateVacanza(id, { nome, dataInizio, dataFine, numeroPersone }) {
+export async function updateVacanza(id, { nome, dataInizio, dataFine, numeroPersone, immagini }) {
   const record = await Store.get('vacanze', id);
   if (!record) throw new Error('Vacanza non trovata');
   record.nome = nome.trim();
   record.dataInizio = dataInizio ?? record.dataInizio;
   record.dataFine = dataFine ?? record.dataFine;
   if (numeroPersone !== undefined) record.numeroPersone = Number(numeroPersone) || 1;
+  if (immagini !== undefined) record.immagini = immagini;
   record.updatedAt = nowISO();
   return Store.put('vacanze', record);
 }
 
-/** Alloggio unico per una vacanza "fissa" (un luogo). */
-export async function setVacanzaAlloggio(vacanzaId, tappaId) {
-  const record = await Store.get('vacanze', vacanzaId);
-  if (!record) throw new Error('Vacanza non trovata');
-  record.alloggioId = tappaId || null;
-  record.updatedAt = nowISO();
-  return Store.put('vacanze', record);
-}
-
-/** Pool di alloggi tra cui scegliere giorno per giorno in una vacanza itinerante. */
+/** Pool di alloggi tra cui scegliere giorno per giorno. */
 export async function addAlloggioToVacanza(vacanzaId, tappaId) {
   const record = await Store.get('vacanze', vacanzaId);
   if (!record) throw new Error('Vacanza non trovata');
@@ -418,21 +418,74 @@ export async function listGiornateByVacanza(vacanzaId) {
   return list.sort((a, b) => a.ordine - b.ordine);
 }
 
-/** Id delle destinazioni distinte che compaiono nelle giornate di una vacanza (per i filtri). */
-export async function listDestinazioneIdsUsateByVacanza(vacanzaId) {
-  const giornate = await listGiornateByVacanza(vacanzaId);
-  return [...new Set(giornate.map((g) => g.destinazioneId).filter(Boolean))];
+/** Le destinazioni "toccate" da un giorno non sono più una scelta a monte: si deducono dalle
+ * tappe pianificate al suo interno (più l'eventuale alloggio). Un giorno può benissimo toccare
+ * più destinazioni insieme (es. una sosta a metà strada). Ritorna gli oggetti Destinazione. */
+export async function getDestinazioniGiorno(giornataId) {
+  const voci = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
+  const giornata = await Store.get('giornate', giornataId);
+  const tappaIds = new Set();
+  for (const v of voci) {
+    if (v.tipoVoce === 'tappa' && v.tappaId) tappaIds.add(v.tappaId);
+  }
+  if (giornata && giornata.alloggioId) tappaIds.add(giornata.alloggioId);
+  const destIds = new Set();
+  for (const tappaId of tappaIds) {
+    const tappa = await Store.get('tappe', tappaId);
+    if (tappa && tappa.destinazioneId) destIds.add(tappa.destinazioneId);
+  }
+  const destinazioni = [];
+  for (const id of destIds) {
+    const d = await Store.get('destinazioni', id);
+    if (d) destinazioni.push(d);
+  }
+  return destinazioni;
 }
 
-export async function addGiornata(vacanzaId, destinazioneId) {
+/** Id delle destinazioni distinte toccate in tutta la vacanza (per i filtri). */
+export async function listDestinazioneIdsUsateByVacanza(vacanzaId) {
+  const giornate = await listGiornateByVacanza(vacanzaId);
+  const ids = new Set();
+  for (const g of giornate) {
+    const dest = await getDestinazioniGiorno(g.id);
+    dest.forEach((d) => ids.add(d.id));
+  }
+  return [...ids];
+}
+
+/** Quanti giorni si possono ancora aggiungere: se la vacanza ha entrambe le date, non oltre la
+ * durata del periodo; altrimenti nessun limite (l'utente non ha ancora deciso le date). */
+export async function canAddGiorno(vacanzaId) {
+  const vacanza = await Store.get('vacanze', vacanzaId);
+  const giorniAttuali = (await listGiornateByVacanza(vacanzaId)).length;
+  if (!vacanza || !vacanza.dataInizio || !vacanza.dataFine) {
+    return { ok: true, maxGiorni: null, giorniAttuali };
+  }
+  const inizio = new Date(vacanza.dataInizio);
+  const fine = new Date(vacanza.dataFine);
+  const maxGiorni = Math.round((fine - inizio) / 86400000) + 1;
+  return { ok: giorniAttuali < maxGiorni, maxGiorni, giorniAttuali };
+}
+
+/** Data di un giorno dalla sua posizione, se la vacanza ha una data di inizio: altrimenti null. */
+export function dataGiorno(vacanza, indice) {
+  if (!vacanza || !vacanza.dataInizio) return null;
+  const d = new Date(vacanza.dataInizio);
+  d.setDate(d.getDate() + indice);
+  return d.toISOString().slice(0, 10);
+}
+
+export async function addGiornata(vacanzaId) {
+  const check = await canAddGiorno(vacanzaId);
+  if (!check.ok) {
+    throw new Error(`La vacanza copre ${check.maxGiorni} giorni: non puoi pianificarne di più senza allungare le date.`);
+  }
   const esistenti = await listGiornateByVacanza(vacanzaId);
   const record = {
     id: uuid(),
     vacanzaId,
     ordine: esistenti.length,
-    data: '',
-    destinazioneId,
-    alloggioId: null, // solo per vacanze itineranti: scelto tra il pool alloggiIds della vacanza
+    alloggioId: null, // scelto tra il pool alloggiIds della vacanza
     createdAt: nowISO(),
     updatedAt: nowISO(),
   };
@@ -453,31 +506,6 @@ export async function setGiornataAlloggio(giornataId, tappaId) {
 }
 
 /** Cambia la destinazione di UNA giornata: consentito solo se la vacanza è itinerante. */
-export async function updateGiornataDestinazione(giornataId, destinazioneId) {
-  const giornata = await Store.get('giornate', giornataId);
-  if (!giornata) throw new Error('Giornata non trovata');
-  const vacanza = await Store.get('vacanze', giornata.vacanzaId);
-  if (vacanza.tipo === 'fissa') {
-    throw new Error('In una vacanza "un luogo" la destinazione è fissa per tutte le giornate');
-  }
-  giornata.destinazioneId = destinazioneId;
-  giornata.updatedAt = nowISO();
-
-  // Le tappe pianificate della vecchia destinazione non hanno più senso: le rimuoviamo,
-  // ma l'avviso all'utente viene mostrato in UI prima di chiamare questa funzione.
-  const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
-  for (const p of pian) await Store.delete('tappePianificate', p.id);
-
-  return Store.put('giornate', giornata);
-}
-
-export async function updateGiornataData(giornataId, data) {
-  const giornata = await Store.get('giornate', giornataId);
-  giornata.data = data;
-  giornata.updatedAt = nowISO();
-  return Store.put('giornate', giornata);
-}
-
 export async function deleteGiornata(giornataId) {
   const pian = await Store.getAllByIndex('tappePianificate', 'giornataId', giornataId);
   for (const p of pian) {
