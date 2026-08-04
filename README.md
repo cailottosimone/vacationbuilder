@@ -1,7 +1,51 @@
-# Vacation Builder — v32 (vacanza unica, tappe cross-destinazione, giorni con data e limite)
+# Vacation Builder — v35 (aggiunta rapida tappa anche in Partenza/Rientro)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
 online per natura). Installabile come PWA.
+
+## Novità v35
+
+- **"+ Nuova tappa" anche nei form Partenza e Rientro**: stesso meccanismo già introdotto per
+  "Pianifica una tappa" — crei la tappa al volo senza uscire dal flusso, torni dritto al form con
+  quel riferimento già scelto.
+
+Non l'ho aggiunto anche al form Spostamento: lì ci sono due riferimenti (Da/A) invece di uno solo,
+e non era comunque nella richiesta — se ti serve anche lì, dimmelo e vedo il modo più pulito per
+gestire la scelta tra i due campi.
+
+## Novità v34
+
+- **Mappa del giorno**: nel Programma, un bottone "Mostra mappa del giorno" (appare solo se ci
+  sono voci con coordinate) apre una mappa con tutte le tappe della giornata — incluse Partenza e
+  Rientro, risolte verso il loro riferimento — collegate da una linea nell'ordine della giornata,
+  per capire il percorso a colpo d'occhio. Stesso interruttore "appare/scompare" già usato per le
+  mappe di tappa e destinazione.
+- **Aggiunta rapida di una tappa mentre pianifichi**: nel form "Pianifica una tappa" un bottone
+  "+ Nuova tappa" apre la creazione di una tappa al volo (senza uscire dalla vacanza), preselezionando
+  la destinazione se avevi già filtrato, e tornando dritto al form di pianificazione con la tappa
+  appena creata già scelta.
+- **Lista**: "Generale (valigia)" rinominata "Lista Vacanza", via il riempimento nero da inattiva
+  (sembrava un avviso) — ora ha più peso solo tramite icona e grassetto, diventa piena solo
+  quando selezionata come tutte le altre.
+- **Fix centraggio "Alloggi"**: il pannello richiudibile aveva un padding inferiore che restava
+  anche da chiuso, spingendo il testo verso l'alto invece di centrarlo.
+
+## Novità v33
+
+- **Via il checkbox "Segui il numero di persone della vacanza"**: era blu e sembrava un bottone
+  da premere, quando nel 99% dei casi va lasciato stare. Ora è testo informativo ("Segue la
+  vacanza: 4") con un link "Personalizza" per chi vuole davvero cambiarlo — l'azione richiede un
+  gesto esplicito invece di un controllo sempre visibile che invitava al click.
+- **Fix vero (non un aggiramento) della perdita di Descrizione/Categoria/Voce collegata** al
+  cambio di modalità spesa: prima l'intero form veniva rigenerato a ogni cambio, ora solo il
+  riquadro dell'importo si aggiorna da solo, il resto del form resta intatto.
+- **Etichetta "Voce collegata"** accorciata (era "Collegata a una voce"): andava a capo e
+  sfalsava l'allineamento con "Categoria" di fianco.
+- **Lista**: "Generale · valigia" ora ha un peso visivo maggiore (sempre in tono scuro, separata
+  da un divisore) rispetto ai giorni, che restano uniformi tra loro. I giorni mostrano anche la
+  data quando la conosciamo.
+- **Alloggi della vacanza**: da sezione con sfondo blu sempre in vista, a pannello richiudibile
+  (chiuso di default) con colori neutri e un elenco in tabella invece dei chip colorati.
 
 ## Novità v32 — revisione importante del modello
 
