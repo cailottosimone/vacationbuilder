@@ -79,18 +79,26 @@ export async function renderCanvasVacanze() {
     const giorniTabs = await Promise.all(
       giornate.map(async (g, i) => {
         const destGiorno = await repo.getDestinazioniGiorno(g.id);
+        const voci = await repo.listVociByGiornata(g.id);
         const active = g.id === state.selectedGiornataId ? 'is-active' : '';
         const alloggioNome = g.alloggioId ? await tappaNome(g.alloggioId) : null;
         const data = repo.dataGiorno(vacanza, i);
+        // Data e conteggio voci nella stessa riga: due dati riassuntivi dello stesso peso visivo.
+        const suffixParts = [];
+        if (data) suffixParts.push(formatDate(data));
+        if (voci.length) suffixParts.push(`${voci.length} voc${voci.length === 1 ? 'e' : 'i'}`);
+        const suffixHtml = suffixParts.length ? `<span class="giorno-tab-date"> · ${suffixParts.join(' · ')}</span>` : '';
         return `<div class="giorno-tab ${active}" draggable="true" data-id="${g.id}" data-action="select-giorno">
           <button class="card-delete" data-action="delete-giorno" data-id="${g.id}" title="Elimina giorno"><i class="fa-solid fa-trash-can"></i></button>
-          <div class="giorno-tab-label">Giorno ${i + 1}${data ? `<span class="giorno-tab-date"> · ${formatDate(data)}</span>` : ''}</div>
+          <div class="giorno-tab-label">Giorno ${i + 1}${suffixHtml}</div>
           ${alloggioNome ? `<div class="giorno-tab-alloggio">${escapeHtml(alloggioNome)}</div>` : ''}
-          ${
-            destGiorno.length
-              ? `<div class="stamp">${escapeHtml(destGiorno.map((d) => d.nome).join(' · '))}</div>`
-              : `<div class="stamp stamp-vuoto">Nessuna tappa ancora</div>`
-          }
+          <div class="card-badges">
+            ${
+              destGiorno.length
+                ? destGiorno.map((d) => `<span class="badge">${escapeHtml(d.nome)}</span>`).join('')
+                : `<span class="badge badge--muted">Nessuna tappa ancora</span>`
+            }
+          </div>
         </div>`;
       })
     );

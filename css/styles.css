@@ -124,16 +124,95 @@ a { color: var(--blue); }
   display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
   padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--border);
 }
-.page-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); font-weight: 700; margin-bottom: 6px; }
-.page-title { font-size: 30px; font-weight: 800; color: var(--text); line-height: 1.15; letter-spacing: -0.01em; }
-.page-note { margin-top: 8px; font-size: 14px; color: var(--text-soft); max-width: 620px; line-height: 1.6; }
+.page-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--blue); font-weight: 700; margin-bottom: 10px; }
+.page-title { font-size: 30px; font-weight: 800; color: var(--text); line-height: 1.2; letter-spacing: -0.01em; }
+.page-note { margin-top: 12px; font-size: 14px; color: var(--text-soft); max-width: 620px; line-height: 1.6; }
 .page-context { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.page-context-chip {
+
+/* ---------------------------------------------------------------------- */
+/* Sistema di card condiviso                                               */
+/* ---------------------------------------------------------------------- */
+/* Tre elementi riusati identici su ogni card dell'app (item-card, item-row,
+   tappa-card, giorno-tab, header di pagina):
+   - .card-stat / .card-stats     dato riassuntivo con icona, in pillola (es. "4 tappe")
+   - .card-stat--plain / .card-stats-plain   stesso dato, "nudo" e monospazio, per le card
+     più dense (tappa-card: durata, coordinate)
+   - .badge / .card-badges        etichetta di appartenenza (categoria, tipo, destinazione)
+   Tutti wrappano su più righe quando lo spazio non basta: niente scrollbar orizzontali.
+   La gerarchia dimensionale delle card resta volutamente su tre livelli
+   (--radius-l per le card "vetrina" di elenco, --radius-m per le card
+   annidate/di lavoro, --radius-s per input e bottoni): non la appiattiamo,
+   è quella la gerarchia visiva. */
+
+.card-stat, .page-context-chip {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 11.5px; font-weight: 700; color: var(--text-soft);
   background: var(--surface-soft); border-radius: 20px; padding: 4px 10px;
+  white-space: nowrap;
 }
-.page-context-chip i { color: var(--text-faint); font-size: 10.5px; }
+.card-stat i, .page-context-chip i { color: var(--text-faint); font-size: 10.5px; }
+.card-stats { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+
+/* Variante "nuda": stesso dato, senza pillola di sfondo — per le card più dense
+   (tappa-card) dove una fila di pillole piene affollerebbe troppo lo spazio. */
+.card-stat--plain {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-weight: 600; color: var(--text-faint);
+  font-family: var(--font-mono); font-size: 11px;
+}
+.card-stat--plain i { font-size: 10px; }
+.card-stats-plain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  background: var(--blue-soft); color: var(--blue-dark);
+  white-space: nowrap;
+}
+/* Secondaria: informazione presente ma non la caratteristica principale
+   (es. tipo secondario di una tappa, "nessuna tappa ancora" su un giorno). */
+.badge--muted { background: var(--surface-soft); color: var(--text-faint); font-weight: 500; }
+.card-badges { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+
+/* ---------------------------------------------------------------------- */
+/* Home                                                                     */
+/* ---------------------------------------------------------------------- */
+
+.home-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; margin-bottom: 48px; }
+.stat-tile {
+  background: var(--surface); box-shadow: 0 0 0 1px var(--border);
+  border-radius: var(--radius-l); padding: 20px 22px;
+}
+.stat-tile-value { font-size: 32px; font-weight: 800; color: var(--text); line-height: 1.1; margin-bottom: 10px; letter-spacing: -0.01em; }
+.stat-tile .page-eyebrow { margin-bottom: 0; }
+
+.home-section { margin-bottom: 48px; }
+.home-section-title { font-size: 15px; font-weight: 800; color: var(--text); }
+.home-section-sub { font-size: 13px; color: var(--text-soft); margin-top: 7px; margin-bottom: 22px; max-width: 620px; line-height: 1.55; }
+
+.home-featured { max-width: 340px; }
+
+.home-cta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.cta-tile {
+  background: var(--surface); box-shadow: 0 0 0 1px var(--border);
+  border-radius: var(--radius-l); padding: 24px 22px;
+  text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 14px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.cta-tile:hover { transform: translateY(-3px); box-shadow: 0 0 0 1px transparent, var(--shadow-md); }
+.cta-tile-icon {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--blue-soft); color: var(--blue-dark);
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.cta-tile-title { font-size: 15.5px; font-weight: 700; color: var(--text); }
+.cta-tile-note { font-size: 12.5px; color: var(--text-soft); line-height: 1.6; }
+/* Ingresso non ancora costruito (stato d'animo, in attesa degli indicatori): visibile e onesto
+   su cosa manca, ma senza invitare al click come le altre due card cliccabili. */
+.cta-tile--muted { cursor: default; }
+.cta-tile--muted:hover { transform: none; box-shadow: 0 0 0 1px var(--border); }
+.cta-tile--muted .cta-tile-icon { background: var(--surface-soft); color: var(--text-faint); }
 .page-header-actions { display: flex; gap: 10px; flex-shrink: 0; padding-top: 4px; }
 .page-header-main { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
 .timeline-item-main { display: flex; align-items: flex-start; gap: 14px; min-width: 0; flex: 1; }
@@ -228,14 +307,12 @@ a { color: var(--blue); }
   margin-top: 5px;
 }
 
-.item-card-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.item-card-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
 .item-card-title { font-size: 16.5px; font-weight: 700; color: var(--text); }
-.item-card-meta { font-size: 12px; color: var(--text-faint); font-weight: 600; }
-.item-card-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 
 .item-list { display: flex; flex-direction: column; gap: 8px; }
 .item-row {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px;
   padding: 13px 18px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -256,9 +333,7 @@ a { color: var(--blue); }
   flex: 1 1 120px; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.item-row-meta { font-size: 12.5px; color: var(--text-faint); flex-shrink: 0; }
-.item-row-badges { display: flex; gap: 6px; flex-shrink: 1; min-width: 0; max-width: 40%; overflow-x: auto; }
-.item-row-chevron { color: var(--text-faint); font-size: 14px; flex-shrink: 0; }
+.item-row-chevron { color: var(--text-faint); font-size: 14px; flex-shrink: 0; margin-left: auto; }
 
 .empty-list-note {
   padding: 60px 20px;
@@ -299,12 +374,14 @@ a { color: var(--blue); }
   padding: 16px 18px;
   cursor: pointer;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 .tappa-card:hover { box-shadow: var(--shadow-md); border-color: transparent; transform: translateY(-2px); }
-.tappa-card-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; padding-right: 20px; }
-.tappa-card-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
-.tappa-card-note { margin-top: 8px; font-size: 12.5px; color: var(--text-soft); line-height: 1.5; }
+.tappa-card-title { font-size: 16px; font-weight: 700; color: var(--text); padding-right: 20px; }
+.tappa-card-note { font-size: 12.5px; color: var(--text-soft); line-height: 1.5; }
 
 .card-delete {
   position: absolute; top: 10px; right: 10px;
@@ -320,25 +397,9 @@ a { color: var(--blue); }
 .dest-cover { width: 68px; height: 68px; border-radius: var(--radius-m); object-fit: cover; flex-shrink: 0; }
 .cover-thumb { width: 42px; height: 42px; border-radius: var(--radius-s); object-fit: cover; flex-shrink: 0; }
 
-.categoria-badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.categoria-badge {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 700;
-  background: var(--blue-soft);
-  color: var(--blue-dark);
-}
-
 /* ---------------------------------------------------------------------- */
-/* Vacanze: badge tipo, tab giorno, timbro                                 */
+/* Vacanze: tab giorno                                                     */
 /* ---------------------------------------------------------------------- */
-
-.badge-tipo-vacanza {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
-  padding: 4px 12px; border-radius: 20px; margin-top: 8px;
-}
-.badge-tipo-vacanza.fissa { background: var(--blue-soft); color: var(--blue-dark); }
-.badge-tipo-vacanza.itinerante { background: var(--blue-dark); color: #fff; }
 
 .giorni-row { display: flex; gap: 10px; overflow-x: auto; padding: 4px 4px 14px; margin-bottom: 6px; }
 
@@ -349,18 +410,13 @@ a { color: var(--blue); }
   cursor: pointer; transition: box-shadow 0.15s ease, transform 0.1s ease, border-color .15s ease;
   text-align: left;
 }
+.giorno-tab:hover { box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 .giorno-tab.is-active { border-color: var(--blue); box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .giorno-tab-label { font-size: 15px; font-weight: 700; color: var(--text); }
 .giorno-tab-alloggio { font-size: 12px; font-weight: 400; font-style: italic; color: var(--text-faint); }
 .giorno-tab-date { font-family: var(--font-mono); font-size: 10px; color: var(--text-faint); margin-top: 2px; }
-
-.stamp {
-  display: inline-flex; align-items: center; gap: 5px;
-  margin-top: 9px; padding: 4px 10px;
-  border-radius: 20px; font-size: 10.5px; font-weight: 700;
-  background: var(--blue-soft); color: var(--blue-dark);
-}
-.stamp-vuoto { background: var(--surface-soft); color: var(--text-faint); font-weight: 500; font-style: italic; }
+.giorno-tab .card-badges { margin-top: 9px; }
+.giorno-tab .badge, .giorno-tab .badge--muted { font-size: 10.5px; }
 
 .giorno-add-tab {
   flex-shrink: 0; min-width: 56px;
@@ -416,6 +472,7 @@ a { color: var(--blue); }
   border-radius: var(--radius-m);
   transition: box-shadow .15s ease;
 }
+.timeline-item:hover { box-shadow: var(--shadow-sm); }
 .timeline-item::before {
   content: ''; position: absolute; left: -27px; top: 50%; transform: translateY(-50%);
   width: 11px; height: 11px; border-radius: 50%;
@@ -528,6 +585,7 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 .dest-picker-sub { display: block; font-size: 11px; color: var(--text-faint); font-weight: 500; margin-top: 2px; }
 
 .type-toggle { display: flex; gap: 8px; }
+.type-toggle--stack { flex-direction: column; }
 .type-toggle-btn { flex: 1; padding: 13px; border-radius: var(--radius-m); border: 1.5px solid var(--border); background: var(--surface); text-align: left; }
 .type-toggle-btn.is-selected { border-color: var(--blue); background: var(--blue-soft); }
 .type-toggle-title { font-size: 14.5px; font-weight: 700; color: var(--text); }
@@ -539,6 +597,9 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 .coord-hint { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); margin-top: -12px; margin-bottom: 16px; }
 .coord-hint.is-valid { color: var(--blue-dark); }
 .coord-hint.is-invalid { color: var(--red-dark); }
+/* Sotto un bottone ("Rileva posizione") invece che sotto un input di testo: qui non deve
+   recuperare spazio verso l'alto, altrimenti si sovrappone al bottone stesso. */
+.coord-hint--standalone { margin-top: 10px; margin-bottom: 4px; }
 
 .point-leaflet-map { width: 100%; height: 220px; border-radius: var(--radius-m); margin-top: 10px; border: 1px solid var(--border); }
 .map-hint { margin-top: 8px; font-size: 12px; color: var(--text-faint); }
@@ -659,8 +720,46 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 /* Esplora                                                                  */
 /* ---------------------------------------------------------------------- */
 
-.esplora-form { max-width: 680px; padding-bottom: 24px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
-.esplora-form .field select, .esplora-form .field input[type=text], .esplora-form .field input[type=number] { margin-top: 4px; }
+.esplora-layout { display: grid; grid-template-columns: 300px 1fr; gap: 32px; align-items: start; }
+
+.esplora-sidebar {
+  position: sticky; top: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-l);
+  padding: 22px;
+}
+.esplora-sidebar .field select, .esplora-sidebar .field input[type=text], .esplora-sidebar .field input[type=number] { margin-top: 4px; }
+.esplora-sidebar-selects { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+/* Sezione pieghevole generica (stesso linguaggio visivo di .alloggi-pool, qui riusato per
+   raggruppare i filtri di Esplora e ridurre lo sviluppo verticale della colonna). */
+.details-card { margin-bottom: 14px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface-soft); padding: 0 14px; }
+.details-card:last-child { margin-bottom: 0; }
+.details-card[open] { padding-bottom: 16px; }
+.details-card summary {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 0;
+  cursor: pointer; list-style: none;
+  font-size: 12.5px; font-weight: 700; color: var(--text-soft);
+}
+.details-card summary::-webkit-details-marker { display: none; }
+.details-card summary::before { content: '▸'; font-size: 10px; color: var(--text-faint); transition: transform 0.15s ease; }
+.details-card[open] summary::before { transform: rotate(90deg); }
+.details-card .field:last-child { margin-bottom: 0; }
+
+.esplora-raggio-input { display: flex; align-items: center; gap: 8px; }
+.esplora-raggio-input input { width: 100%; min-width: 0; }
+
+.esplora-travel-filter-group { margin-top: 10px; }
+.esplora-travel-filter-group:first-child { margin-top: 0; }
+.esplora-travel-filter-label { font-size: 11.5px; font-weight: 700; color: var(--text-soft); margin-bottom: 6px; }
+.esplora-travel-filter-row { display: flex; gap: 8px; }
+.esplora-travel-filter-row input { width: 100%; min-width: 0; }
+
+.esplora-main { min-width: 0; }
+.esplora-results-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-l);
+  padding: 22px; min-height: 120px;
+}
 
 .esplora-batch-banner {
   display: flex;
@@ -679,9 +778,9 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 .esplora-results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .esplora-results-header span { font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-faint); }
 
-.esplora-leaflet-map { width: 100%; height: 380px; border-radius: var(--radius-m); margin-bottom: 14px; border: 1px solid var(--border); }
+.esplora-leaflet-map { width: 100%; height: 380px; border-radius: var(--radius-m); margin-top: 16px; border: 1px solid var(--border); }
 
-.esplora-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface); }
+.esplora-table-wrap { overflow-x: auto; }
 .esplora-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .esplora-table thead th {
   text-align: left;
@@ -694,13 +793,43 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
-.esplora-table-row { cursor: pointer; transition: background 0.1s ease; }
 .esplora-table-row:hover { background: var(--blue-soft); }
-.esplora-table-row td { padding: 11px 16px; border-bottom: 1px solid var(--border-soft); }
+.esplora-table-row td { padding: 11px 16px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+.esplora-table-row td:first-child { cursor: default; padding: 11px 4px 11px 10px; }
 .esplora-table-row:last-child td { border-bottom: none; }
 .esplora-td-nome { font-weight: 700; color: var(--text); white-space: nowrap; }
+.esplora-td-tappecount { font-family: var(--font-mono); font-weight: 500; font-size: 10.5px; color: var(--text-faint); margin-left: 8px; }
 .esplora-td-meta { color: var(--text-faint); white-space: nowrap; }
 .esplora-td-num { font-family: var(--font-mono); color: var(--text-soft); text-align: right; }
+
+.esplora-td-expand { width: 30px; }
+.esplora-td-expand-btn {
+  width: 22px; height: 22px; border-radius: 50%; border: none; background: transparent;
+  color: var(--text-faint); font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.esplora-td-expand-btn:hover { background: var(--surface-soft); color: var(--blue-dark); }
+.esplora-td-expand-btn.is-expanded { transform: rotate(90deg); }
+
+.esplora-tappe-row td { padding: 0; border-bottom: 1px solid var(--border-soft); background: var(--surface-soft); cursor: default; }
+.esplora-tappe-row:last-child td { border-bottom: none; }
+.esplora-tappe-list { padding: 10px 16px 10px 46px; display: flex; flex-wrap: wrap; gap: 6px; }
+.esplora-tappa-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.esplora-tappa-item:hover { border-color: var(--blue); background: var(--blue-soft); }
+.esplora-tappa-icon { color: var(--text-faint); font-size: 10px; }
+.esplora-tappe-vuoto { font-size: 12.5px; color: var(--text-faint); padding: 6px 0; }
+
+@media (max-width: 1080px) {
+  .esplora-layout { grid-template-columns: 1fr; }
+  .esplora-sidebar { position: static; }
+}
 
 .mobile-tabbar { display: none; }
 

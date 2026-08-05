@@ -5,7 +5,7 @@ import { calcolaDistanzaStrada } from '../routing.js';
 import {
   openInspector, closeInspector, showModal, bindCoordinateHint, bindMapButton, mountPhotoGallery, openNomeForm,
 } from '../components/dialog.js';
-import { destCardHtml, destRowHtml, vacCardHtml, vacRowHtml, tappaCardHtml, chipCheckboxesHtml, emptyListNote } from '../components/card.js';
+import { destCardHtml, destRowHtml, vacCardHtml, vacRowHtml, tappaCardHtml, recentItemRowHtml, chipCheckboxesHtml, emptyListNote } from '../components/card.js';
 import { state, canvas, renderCanvas, renderRailNav, getNavNascosti, updateNavNascostiCache, NAV_ITEMS } from '../app.js';
 import { showToast } from '../components/toast.js';
 
@@ -97,16 +97,22 @@ export function renderDestinazioniListResults() {
 }
 
 
+/** Arricchisce un record vacanza con i dati che le card (vacCardHtml/vacRowHtml) mostrano:
+ * durata in giorni e nomi delle destinazioni toccate. Condivisa tra l'elenco Vacanze e la Home. */
+export async function augmentVacanzaPerCard(v, nomeDestinazioneMap = null) {
+  const giornate = await repo.listGiornateByVacanza(v.id);
+  const destinazioneIds = await repo.listDestinazioneIdsUsateByVacanza(v.id);
+  const destinazioniNomi = nomeDestinazioneMap
+    ? destinazioneIds.map((id) => nomeDestinazioneMap[id]).filter(Boolean)
+    : (await Promise.all(destinazioneIds.map((id) => repo.getDestinazione(id)))).filter(Boolean).map((d) => d.nome);
+  return { ...v, durataGiorni: giornate.length, destinazioneIds, destinazioniNomi };
+}
+
 export async function renderVacanzeList() {
   const all = await repo.listVacanze();
-  vacCache = await Promise.all(
-    all.map(async (v) => {
-      const giornate = await repo.listGiornateByVacanza(v.id);
-      const destinazioneIds = await repo.listDestinazioneIdsUsateByVacanza(v.id);
-      return { ...v, durataGiorni: giornate.length, destinazioneIds };
-    })
-  );
   const destinazioni = await repo.listDestinazioni();
+  const nomeDestinazione = Object.fromEntries(destinazioni.map((d) => [d.id, d.nome]));
+  vacCache = await Promise.all(all.map((v) => augmentVacanzaPerCard(v, nomeDestinazione)));
   const f = state.filters.vacanze;
 
   canvas.innerHTML = `
@@ -249,7 +255,7 @@ export async function renderCanvasRepository() {
             <div class="page-context"><span class="page-context-chip"><i class="fa-solid fa-map-pin"></i> ${tappe.length} tapp${tappe.length === 1 ? 'a' : 'e'}</span></div>
             ${geoLine ? `<div class="page-note">${escapeHtml(geoLine)}</div>` : ''}
             ${dest.coordinate ? `<div class="page-note"><i class="fa-solid fa-location-dot"></i> ${formatCoordinate(dest.coordinate)}</div>` : ''}
-            ${categorieDest.length ? `<div class="categoria-badge-row">${categorieDest.map((c) => `<span class="categoria-badge">${escapeHtml(c.nome)}</span>`).join('')}</div>` : ''}
+            ${categorieDest.length ? `<div class="card-badges" style="margin-top:8px;">${categorieDest.map((c) => `<span class="badge">${escapeHtml(c.nome)}</span>`).join('')}</div>` : ''}
             ${dest.note ? `<div class="page-note">${escapeHtml(dest.note)}</div>` : ''}
           </div>
         </div>
@@ -275,11 +281,19 @@ export async function renderCanvasRepository() {
 
 
 let esploraDestCache = [];
+let esploraTipiCache = [];
+/** Tappe per destinazione, caricate solo quando una riga viene espansa (non tutte in anticipo). */
+let esploraTappeCache = {};
+/** Id delle destinazioni con la riga espansa nei risultati. */
+let esploraExpanded = new Set();
 
 
 export async function renderCanvasEsplora() {
-  const destinazioni = await repo.listDestinazioni();
-  esploraDestCache = destinazioni;
+  const raw = await repo.listDestinazioni();
+  esploraDestCache = await Promise.all(raw.map(async (d) => ({ ...d, tappeCount: (await repo.listTappeByDestinazione(d.id)).length })));
+  esploraTipiCache = await repo.listTipiTappa();
+  esploraTappeCache = {};
+  esploraExpanded = new Set();
   const facets = await repo.getFacetsDestinazioni();
   const categorie = await repo.listCategorieDestinazione();
   const es = state.esplora;
@@ -290,60 +304,76 @@ export async function renderCanvasEsplora() {
         <div>
           <div class="page-eyebrow">Esplora</div>
           <div class="page-title">Cosa c'è nei dintorni?</div>
-          <div class="page-note">Scegli un punto di partenza e un raggio di ricerca: calcolo in automatico linea d'aria, auto e a piedi per tutte le destinazioni entro quel raggio, e puoi filtrare su ognuno di questi valori.</div>
+          <div class="page-note">Scegli un punto di partenza: calcolo in automatico linea d'aria, auto e a piedi per le destinazioni nel raggio scelto, e puoi filtrare su ognuno di questi valori.</div>
         </div>
       </div>
 
-      <div class="esplora-form">
-        <div class="field">
-          <label class="field-label">Punto di partenza</label>
-          <div class="type-toggle" id="esplora-origine-toggle">
-            <button type="button" class="type-toggle-btn ${es.origineModo === 'coordinate' ? 'is-selected' : ''}" data-modo="coordinate">
-              <div class="type-toggle-title">Coordinate</div>
-              <div class="type-toggle-sub">Incolla lat, lng</div>
-            </button>
-            <button type="button" class="type-toggle-btn ${es.origineModo === 'destinazione' ? 'is-selected' : ''}" data-modo="destinazione">
-              <div class="type-toggle-title">Destinazione</div>
-              <div class="type-toggle-sub">Parti da un luogo in archivio</div>
-            </button>
-            <button type="button" class="type-toggle-btn ${es.origineModo === 'posizione' ? 'is-selected' : ''}" data-modo="posizione">
-              <div class="type-toggle-title">Posizione attuale</div>
-              <div class="type-toggle-sub">Geolocalizzazione del browser</div>
-            </button>
-          </div>
+      <div class="esplora-layout">
+        <div class="esplora-sidebar">
+          <details class="details-card" id="esplora-sez-origine" open>
+            <summary>Punto di partenza <span class="badge badge--muted">${escapeHtml(labelOrigineCorrente(es, esploraDestCache))}</span></summary>
+            <div class="field">
+              <div class="type-toggle type-toggle--stack" id="esplora-origine-toggle">
+                <button type="button" class="type-toggle-btn ${es.origineModo === 'coordinate' ? 'is-selected' : ''}" data-modo="coordinate">
+                  <div class="type-toggle-title">Coordinate</div>
+                  <div class="type-toggle-sub">Incolla lat, lng</div>
+                </button>
+                <button type="button" class="type-toggle-btn ${es.origineModo === 'destinazione' ? 'is-selected' : ''}" data-modo="destinazione">
+                  <div class="type-toggle-title">Destinazione</div>
+                  <div class="type-toggle-sub">Parti da un luogo in archivio</div>
+                </button>
+                <button type="button" class="type-toggle-btn ${es.origineModo === 'posizione' ? 'is-selected' : ''}" data-modo="posizione">
+                  <div class="type-toggle-title">Posizione attuale</div>
+                  <div class="type-toggle-sub">Geolocalizzazione del browser</div>
+                </button>
+              </div>
+            </div>
+            <div id="esplora-origine-input">${renderEsploraOrigineInput(esploraDestCache)}</div>
+          </details>
+
+          <details class="details-card" id="esplora-sez-distanza" open>
+            <summary>Distanza e tempo <span class="badge badge--muted">entro ${escapeHtml(String(es.raggioKm || 0))} km</span></summary>
+            <div class="esplora-travel-filter-group">
+              <div class="esplora-travel-filter-label">Linea d'aria (definisce cosa considerare)</div>
+              <div class="esplora-travel-filter-row">
+                <input type="number" id="esplora-raggio" placeholder="Km max" min="1" value="${es.raggioKm}">
+              </div>
+            </div>
+            <div class="esplora-travel-filter-group">
+              <div class="esplora-travel-filter-label">In auto</div>
+              <div class="esplora-travel-filter-row">
+                <input type="number" id="esplora-fv-autokm" placeholder="Km max" min="0" value="${es.filtriValori.autoKmMax}">
+                <input type="number" id="esplora-fv-automin" placeholder="Min max" min="0" value="${es.filtriValori.autoMinMax}">
+              </div>
+            </div>
+            <div class="esplora-travel-filter-group">
+              <div class="esplora-travel-filter-label">A piedi</div>
+              <div class="esplora-travel-filter-row">
+                <input type="number" id="esplora-fv-piedikm" placeholder="Km max" min="0" value="${es.filtriValori.piediKmMax}">
+                <input type="number" id="esplora-fv-piedimin" placeholder="Min max" min="0" value="${es.filtriValori.piediMinMax}">
+              </div>
+            </div>
+          </details>
+
+          <details class="details-card" id="esplora-sez-filtri">
+            <summary>Filtri${contaFiltriAttivi(es.filtri) ? ` <span class="badge badge--muted">${contaFiltriAttivi(es.filtri)} attiv${contaFiltriAttivi(es.filtri) === 1 ? 'o' : 'i'}</span>` : ''}</summary>
+            <div class="field">
+              <label class="field-label">Cerca per nome</label>
+              <input type="text" id="esplora-f-nome" placeholder="Cerca per nome…" value="${escapeHtml(es.filtri.nome)}">
+            </div>
+            <div class="esplora-sidebar-selects">
+              <select id="esplora-f-stato"><option value="">Stato (tutti)</option>${facets.stati.map((s) => `<option value="${escapeHtml(s)}" ${es.filtri.stato === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select>
+              <select id="esplora-f-regione"><option value="">Regione (tutte)</option>${facets.regioni.map((s) => `<option value="${escapeHtml(s)}" ${es.filtri.regione === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select>
+              <select id="esplora-f-provincia"><option value="">Provincia (tutte)</option>${facets.province.map((s) => `<option value="${escapeHtml(s)}" ${es.filtri.provincia === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select>
+            </div>
+            <div id="esplora-f-categorie" class="filters-bar-categories" style="margin-top:12px;">${chipCheckboxesHtml(categorie, es.filtri.categorieIds, 'ecat')}</div>
+          </details>
         </div>
 
-        <div class="field" id="esplora-origine-input">${renderEsploraOrigineInput(destinazioni)}</div>
-
-        <div class="field">
-          <label class="field-label">Raggio di ricerca iniziale, in linea d'aria (km)</label>
-          <input type="number" id="esplora-raggio" min="1" value="${es.raggioKm}">
-        </div>
-        <div class="hint">Il raggio definisce quali destinazioni considerare. "Treno" non è incluso: non esiste un servizio di routing ferroviario gratuito senza una chiave a pagamento.</div>
-
-        <div class="field">
-          <label class="field-label">Altri filtri</label>
-          <div class="filters-bar" style="--filter-cols:3;">
-            <input type="text" id="esplora-f-nome" placeholder="Cerca per nome…" value="${escapeHtml(es.filtri.nome)}">
-            <select id="esplora-f-stato"><option value="">Stato (tutti)</option>${facets.stati.map((s) => `<option value="${escapeHtml(s)}" ${es.filtri.stato === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select>
-            <select id="esplora-f-regione"><option value="">Regione (tutte)</option>${facets.regioni.map((s) => `<option value="${escapeHtml(s)}" ${es.filtri.regione === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select>
-            <select id="esplora-f-provincia"><option value="">Provincia (tutte)</option>${facets.province.map((s) => `<option value="${escapeHtml(s)}" ${es.filtri.provincia === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}</select>
-          </div>
-          <div id="esplora-f-categorie" class="filters-bar-categories">${chipCheckboxesHtml(categorie, es.filtri.categorieIds, 'ecat')}</div>
-        </div>
-
-        <div class="field">
-          <label class="field-label">Filtri sui valori calcolati (massimo)</label>
-          <div class="filters-bar" style="--filter-cols:4;">
-            <input type="number" id="esplora-fv-aria" placeholder="Km linea d'aria" min="0" value="${es.filtriValori.lineaAriaMax}">
-            <input type="number" id="esplora-fv-autokm" placeholder="Km in auto" min="0" value="${es.filtriValori.autoKmMax}">
-            <input type="number" id="esplora-fv-automin" placeholder="Min in auto" min="0" value="${es.filtriValori.autoMinMax}">
-            <input type="number" id="esplora-fv-piedikm" placeholder="Km a piedi" min="0" value="${es.filtriValori.piediKmMax}">
-          </div>
+        <div class="esplora-main">
+          <div class="esplora-results-card"><div id="esplora-results"></div></div>
         </div>
       </div>
-
-      <div id="esplora-results"></div>
     </div>`;
 
   document.getElementById('esplora-origine-toggle').addEventListener('click', (e) => {
@@ -354,46 +384,93 @@ export async function renderCanvasEsplora() {
     esploraGeneration++;
     renderCanvasEsplora();
   });
-  bindEsploraOrigineInput(destinazioni);
+  bindEsploraOrigineInput(esploraDestCache);
 
-  document.getElementById('esplora-raggio').addEventListener('input', (e) => { es.raggioKm = e.target.value; esploraGeneration++; updateEsploraResults(); });
-  document.getElementById('esplora-f-nome').addEventListener('input', (e) => { es.filtri.nome = e.target.value; updateEsploraResults(); });
-  document.getElementById('esplora-f-stato').addEventListener('change', (e) => { es.filtri.stato = e.target.value; updateEsploraResults(); });
-  document.getElementById('esplora-f-regione').addEventListener('change', (e) => { es.filtri.regione = e.target.value; updateEsploraResults(); });
-  document.getElementById('esplora-f-provincia').addEventListener('change', (e) => { es.filtri.provincia = e.target.value; updateEsploraResults(); });
+  const aggiornaBadgeDistanza = () => {
+    const el = document.querySelector('#esplora-sez-distanza summary .badge');
+    if (el) el.textContent = `entro ${es.raggioKm || 0} km`;
+  };
+  const aggiornaBadgeFiltri = () => {
+    const summary = document.querySelector('#esplora-sez-filtri summary');
+    const n = contaFiltriAttivi(es.filtri);
+    let badge = summary.querySelector('.badge');
+    if (!n) { if (badge) badge.remove(); return; }
+    if (!badge) { badge = document.createElement('span'); badge.className = 'badge badge--muted'; summary.appendChild(badge); }
+    badge.textContent = `${n} attiv${n === 1 ? 'o' : 'i'}`;
+  };
+
+  document.getElementById('esplora-raggio').addEventListener('input', (e) => { es.raggioKm = e.target.value; esploraGeneration++; aggiornaBadgeDistanza(); updateEsploraResults(); });
+  document.getElementById('esplora-f-nome').addEventListener('input', (e) => { es.filtri.nome = e.target.value; aggiornaBadgeFiltri(); updateEsploraResults(); });
+  document.getElementById('esplora-f-stato').addEventListener('change', (e) => { es.filtri.stato = e.target.value; aggiornaBadgeFiltri(); updateEsploraResults(); });
+  document.getElementById('esplora-f-regione').addEventListener('change', (e) => { es.filtri.regione = e.target.value; aggiornaBadgeFiltri(); updateEsploraResults(); });
+  document.getElementById('esplora-f-provincia').addEventListener('change', (e) => { es.filtri.provincia = e.target.value; aggiornaBadgeFiltri(); updateEsploraResults(); });
   document.getElementById('esplora-f-categorie').addEventListener('change', (e) => {
     if (e.target.type !== 'checkbox') return;
     es.filtri.categorieIds = [...document.querySelectorAll('#esplora-f-categorie input:checked')].map((i) => i.value);
+    aggiornaBadgeFiltri();
     updateEsploraResults();
   });
-  document.getElementById('esplora-fv-aria').addEventListener('input', (e) => { es.filtriValori.lineaAriaMax = e.target.value; updateEsploraResults(); });
   document.getElementById('esplora-fv-autokm').addEventListener('input', (e) => { es.filtriValori.autoKmMax = e.target.value; updateEsploraResults(); });
   document.getElementById('esplora-fv-automin').addEventListener('input', (e) => { es.filtriValori.autoMinMax = e.target.value; updateEsploraResults(); });
   document.getElementById('esplora-fv-piedikm').addEventListener('input', (e) => { es.filtriValori.piediKmMax = e.target.value; updateEsploraResults(); });
+  document.getElementById('esplora-fv-piedimin').addEventListener('input', (e) => { es.filtriValori.piediMinMax = e.target.value; updateEsploraResults(); });
 
   await updateEsploraResults();
+}
+
+/** Etichetta compatta del punto di partenza corrente, per il badge della sezione richiusa. */
+function labelOrigineCorrente(es, destinazioni) {
+  if (es.origineModo === 'coordinate') {
+    const parsed = parseCoordinateInput(es.origineCoordinateRaw);
+    return parsed ? formatCoordinate(parsed) : 'coordinate non impostate';
+  }
+  if (es.origineModo === 'destinazione') {
+    const d = destinazioni.find((x) => x.id === es.origineDestinazioneId);
+    return d ? d.nome : 'nessuna scelta';
+  }
+  return es.originePosizione ? 'posizione rilevata' : 'posizione non rilevata';
+}
+
+/** Aggiorna il badge di riepilogo nella sezione "Punto di partenza" quando si richiude. */
+export function updateEsploraOriginBadge() {
+  const el = document.querySelector('#esplora-sez-origine summary .badge');
+  if (el) el.textContent = labelOrigineCorrente(state.esplora, esploraDestCache);
+}
+
+/** Quanti filtri anagrafici sono attivi in questo momento, per il badge della sezione Filtri. */
+function contaFiltriAttivi(f) {
+  return [f.nome, f.stato, f.regione, f.provincia].filter(Boolean).length + (f.categorieIds.length ? 1 : 0);
 }
 
 
 export function renderEsploraOrigineInput(destinazioni) {
   const es = state.esplora;
   if (es.origineModo === 'coordinate') {
-    return `<label class="field-label">Coordinate di partenza</label>
-      <input type="text" id="esplora-coord" placeholder="45.577315815180725, 11.351812970491833" value="${escapeHtml(es.origineCoordinateRaw)}">
+    // Il segnalino sta FUORI dal .field, come nel form Destinazione/Tappa: dentro, senza il
+    // margine del .field a fargli da cuscinetto, il margine negativo lo spingerebbe dentro
+    // all'input invece che appena sotto (il bug segnalato).
+    return `<div class="field">
+        <label class="field-label">Coordinate di partenza</label>
+        <input type="text" id="esplora-coord" placeholder="45.577315815180725, 11.351812970491833" value="${escapeHtml(es.origineCoordinateRaw)}">
+      </div>
       <div class="coord-hint" id="esplora-coord-hint"></div>`;
   }
   if (es.origineModo === 'destinazione') {
     const conCoord = destinazioni.filter((d) => d.coordinate);
-    return `<label class="field-label">Destinazione di partenza</label>
-      <select id="esplora-dest-origine">
-        <option value="">Scegli una destinazione…</option>
-        ${conCoord.map((d) => `<option value="${d.id}" ${es.origineDestinazioneId === d.id ? 'selected' : ''}>${escapeHtml(d.nome)}</option>`).join('')}
-      </select>
+    return `<div class="field">
+        <label class="field-label">Destinazione di partenza</label>
+        <select id="esplora-dest-origine">
+          <option value="">Scegli una destinazione…</option>
+          ${conCoord.map((d) => `<option value="${d.id}" ${es.origineDestinazioneId === d.id ? 'selected' : ''}>${escapeHtml(d.nome)}</option>`).join('')}
+        </select>
+      </div>
       ${conCoord.length < destinazioni.length ? `<div class="hint">Solo le destinazioni con coordinate salvate compaiono qui.</div>` : ''}`;
   }
-  return `<label class="field-label">Posizione attuale</label>
-    <button type="button" class="btn btn-sm btn-ghost" id="esplora-rileva-posizione">Rileva posizione</button>
-    <div class="coord-hint" id="esplora-posizione-hint">${es.originePosizione ? `Posizione rilevata: ${formatCoordinate(es.originePosizione)}` : 'Nessuna posizione rilevata ancora.'}</div>`;
+  return `<div class="field">
+      <label class="field-label">Posizione attuale</label>
+      <button type="button" class="btn btn-sm btn-ghost" id="esplora-rileva-posizione">Rileva posizione</button>
+    </div>
+    <div class="coord-hint coord-hint--standalone" id="esplora-posizione-hint">${es.originePosizione ? `Posizione rilevata: ${formatCoordinate(es.originePosizione)}` : 'Nessuna posizione rilevata ancora.'}</div>`;
 }
 
 
@@ -422,6 +499,7 @@ export function bindEsploraOrigineInput() {
         hint.textContent = 'Formato non riconosciuto: usa "lat, lng"';
         hint.className = 'coord-hint is-invalid';
       }
+      updateEsploraOriginBadge();
       updateEsploraResults();
     };
     input.addEventListener('input', update);
@@ -430,6 +508,7 @@ export function bindEsploraOrigineInput() {
       es.origineDestinazioneId = e.target.value;
       esploraRoutingCache = {};
       esploraGeneration++;
+      updateEsploraOriginBadge();
       updateEsploraResults();
     });
   } else {
@@ -446,6 +525,7 @@ export function bindEsploraOrigineInput() {
           hint.textContent = `Posizione rilevata: ${formatCoordinate(es.originePosizione)}`;
           esploraRoutingCache = {};
           esploraGeneration++;
+          updateEsploraOriginBadge();
           updateEsploraResults();
         },
         (err) => {
@@ -486,6 +566,28 @@ export function formatRouteValue(r) {
 }
 
 
+/** Espande/richiude le tappe di una destinazione nei risultati, caricandole al volo la prima volta. */
+export async function toggleEsploraTappe(destId) {
+  if (esploraExpanded.has(destId)) {
+    esploraExpanded.delete(destId);
+  } else {
+    esploraExpanded.add(destId);
+    if (!esploraTappeCache[destId]) esploraTappeCache[destId] = await repo.listTappeByDestinazione(destId);
+  }
+  updateEsploraResults();
+}
+
+
+function esploraTappaItemHtml(t) {
+  const tipo = esploraTipiCache.find((x) => x.id === (t.tipi || [])[0]);
+  return `<button class="esplora-tappa-item" data-action="vai-a-destinazione" data-id="${t.destinazioneId}">
+    <i class="fa-solid fa-map-pin esplora-tappa-icon"></i>
+    <span class="esplora-tappa-nome">${escapeHtml(t.nome)}</span>
+    ${tipo ? `<span class="badge badge--muted">${escapeHtml(tipo.nome)}</span>` : ''}
+  </button>`;
+}
+
+
 export function esploraRowHtml(d) {
   const auto = esploraRoutingCache[`${d.id}:driving-car`];
   const piedi = esploraRoutingCache[`${d.id}:foot-walking`];
@@ -496,15 +598,35 @@ export function esploraRowHtml(d) {
   const piediAttesa = piedi ? (piedi.errore ? '—' : piediFmt.km) : '…';
   const piediMinAttesa = piedi ? (piedi.errore ? '—' : piediFmt.min) : '…';
 
-  return `<tr class="esplora-table-row" data-action="vai-a-destinazione" data-id="${d.id}">
-    <td class="esplora-td-nome">${escapeHtml(d.nome)}</td>
-    <td class="esplora-td-meta">${escapeHtml([d.provincia, d.regione].filter(Boolean).join(' · '))}</td>
-    <td class="esplora-td-num">${d.distanzaLineaAria.toFixed(1)}</td>
-    <td class="esplora-td-num">${autoAttesa}</td>
-    <td class="esplora-td-num">${autoMinAttesa}</td>
-    <td class="esplora-td-num">${piediAttesa}</td>
-    <td class="esplora-td-num">${piediMinAttesa}</td>
+  const espansa = esploraExpanded.has(d.id);
+  const chevronHtml = d.tappeCount
+    ? `<button class="esplora-td-expand-btn ${espansa ? 'is-expanded' : ''}" data-action="toggle-esplora-tappe" data-id="${d.id}" title="${espansa ? 'Nascondi' : 'Mostra'} le tappe"><i class="fa-solid fa-chevron-right"></i></button>`
+    : '';
+
+  const rigaPrincipale = `<tr class="esplora-table-row">
+    <td class="esplora-td-expand">${chevronHtml}</td>
+    <td class="esplora-td-nome" data-action="vai-a-destinazione" data-id="${d.id}">
+      ${escapeHtml(d.nome)}${d.tappeCount ? `<span class="esplora-td-tappecount">${d.tappeCount} tapp${d.tappeCount === 1 ? 'a' : 'e'}</span>` : ''}
+    </td>
+    <td class="esplora-td-meta" data-action="vai-a-destinazione" data-id="${d.id}">${escapeHtml([d.provincia, d.regione].filter(Boolean).join(' · '))}</td>
+    <td class="esplora-td-num" data-action="vai-a-destinazione" data-id="${d.id}">${d.distanzaLineaAria.toFixed(1)}</td>
+    <td class="esplora-td-num" data-action="vai-a-destinazione" data-id="${d.id}">${autoAttesa}</td>
+    <td class="esplora-td-num" data-action="vai-a-destinazione" data-id="${d.id}">${autoMinAttesa}</td>
+    <td class="esplora-td-num" data-action="vai-a-destinazione" data-id="${d.id}">${piediAttesa}</td>
+    <td class="esplora-td-num" data-action="vai-a-destinazione" data-id="${d.id}">${piediMinAttesa}</td>
   </tr>`;
+
+  if (!espansa) return rigaPrincipale;
+
+  const tappe = esploraTappeCache[d.id] || [];
+  const rigaTappe = `<tr class="esplora-tappe-row">
+    <td colspan="8">
+      <div class="esplora-tappe-list">
+        ${tappe.length ? tappe.map(esploraTappaItemHtml).join('') : `<div class="esplora-tappe-vuoto">Nessuna tappa ancora per questa destinazione.</div>`}
+      </div>
+    </td>
+  </tr>`;
+  return rigaPrincipale + rigaTappe;
 }
 
 
@@ -557,12 +679,12 @@ export async function updateEsploraResults() {
   // al prossimo giro (quando ensureRoutingForCandidates richiama updateEsploraResults()).
   const fv = es.filtriValori;
   const filtratiPerValore = candidati.filter((d) => {
-    if (fv.lineaAriaMax !== '' && d.distanzaLineaAria > Number(fv.lineaAriaMax)) return false;
     const auto = esploraRoutingCache[`${d.id}:driving-car`];
     const piedi = esploraRoutingCache[`${d.id}:foot-walking`];
     if (fv.autoKmMax !== '' && auto && !auto.errore && auto.distanzaKm > Number(fv.autoKmMax)) return false;
     if (fv.autoMinMax !== '' && auto && !auto.errore && auto.durataMin > Number(fv.autoMinMax)) return false;
     if (fv.piediKmMax !== '' && piedi && !piedi.errore && piedi.distanzaKm > Number(fv.piediKmMax)) return false;
+    if (fv.piediMinMax !== '' && piedi && !piedi.errore && piedi.durataMin > Number(fv.piediMinMax)) return false;
     return true;
   });
 
@@ -580,11 +702,11 @@ export async function updateEsploraResults() {
       <span>${filtratiPerValore.length} destinazion${filtratiPerValore.length === 1 ? 'e' : 'i'} entro ${raggioKm} km</span>
       <button class="btn btn-sm btn-ghost" id="esplora-mostra-mappa">Mostra mappa combinata</button>
     </div>
-    <div id="esplora-mappa-container"></div>
     <div class="esplora-table-wrap">
       <table class="esplora-table">
         <thead>
           <tr>
+            <th></th>
             <th>Nome</th>
             <th>Zona</th>
             <th>Km aria</th>
@@ -596,7 +718,8 @@ export async function updateEsploraResults() {
         </thead>
         <tbody>${filtratiPerValore.map(esploraRowHtml).join('')}</tbody>
       </table>
-    </div>`;
+    </div>
+    <div id="esplora-mappa-container"></div>`;
 
   document.getElementById('esplora-mostra-mappa').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -1319,19 +1442,128 @@ export function openCategoriaSpesaForm(categoria = null) {
 
 
 /* ---------------------------------------------------------------------- */
-/* Home (stub) — pagina vuota in attesa di essere progettata: il come      */
-/* organizzarla è materia della fase 2 (UX), non di questo refactor.       */
+/* Home                                                                    */
 /* ---------------------------------------------------------------------- */
 
+/** Sceglie quale vacanza mettere in evidenza in Home, e perché:
+ * 1) una in corso adesso (oggi cade tra le sue date) ha sempre la precedenza;
+ * 2) altrimenti la prossima futura più vicina, se qualcuna ha una data;
+ * 3) altrimenti quella su cui hai lavorato più di recente (fallback "riprendi da qui"),
+ *    dato che repo.listVacanze() le restituisce già ordinate per updatedAt decrescente. */
+async function getVacanzaInEvidenza(vacanze) {
+  if (!vacanze.length) return null;
+  const oggi = new Date().toISOString().slice(0, 10);
+  const inCorso = vacanze.find((v) => v.dataInizio && v.dataFine && v.dataInizio <= oggi && oggi <= v.dataFine);
+  if (inCorso) return { vacanza: inCorso, stato: 'in-corso' };
+  const future = vacanze.filter((v) => v.dataInizio && v.dataInizio > oggi).sort((a, b) => a.dataInizio.localeCompare(b.dataInizio));
+  if (future.length) return { vacanza: future[0], stato: 'futura' };
+  return { vacanza: vacanze[0], stato: 'recente' };
+}
+
+function labelVacanzaInEvidenza({ vacanza, stato }) {
+  if (stato === 'in-corso') return 'In corso adesso';
+  if (stato === 'futura') {
+    const giorni = Math.ceil((new Date(vacanza.dataInizio) - new Date(new Date().toISOString().slice(0, 10))) / 86400000);
+    if (giorni <= 0) return 'Parte oggi';
+    return `Tra ${giorni} giorn${giorni === 1 ? 'o' : 'i'}`;
+  }
+  return 'Riprendi da qui';
+}
+
+/** Le ultime destinazioni e tappe aggiunte all'archivio, mescolate per data di creazione. */
+async function getRecenti(limit = 6) {
+  const [destinazioni, tappe] = await Promise.all([repo.listDestinazioni(), repo.listTappe()]);
+  const destMap = Object.fromEntries(destinazioni.map((d) => [d.id, d]));
+  const itemsDest = destinazioni.map((d) => ({
+    tipo: 'destinazione',
+    destinazioneId: d.id,
+    nome: d.nome,
+    createdAt: d.createdAt,
+    cover: d.immagini && d.immagini[0],
+    contesto: [d.provincia, d.regione].filter(Boolean).join(' · '),
+  }));
+  const itemsTappa = tappe.map((t) => ({
+    tipo: 'tappa',
+    destinazioneId: t.destinazioneId,
+    nome: t.nome,
+    createdAt: t.createdAt,
+    cover: t.immagini && t.immagini[0],
+    contesto: destMap[t.destinazioneId] ? destMap[t.destinazioneId].nome : '',
+  }));
+  return [...itemsDest, ...itemsTappa]
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+    .slice(0, limit);
+}
+
 export async function renderCanvasHome() {
+  const [destinazioni, tappe, vacanze, recenti] = await Promise.all([
+    repo.listDestinazioni(),
+    repo.listTappe(),
+    repo.listVacanze(),
+    getRecenti(),
+  ]);
+  const evidenza = await getVacanzaInEvidenza(vacanze);
+
+  const statsHtml = `
+    <div class="home-stats-grid">
+      <div class="stat-tile"><div class="stat-tile-value">${destinazioni.length}</div><div class="page-eyebrow">Destinazion${destinazioni.length === 1 ? 'e' : 'i'}</div></div>
+      <div class="stat-tile"><div class="stat-tile-value">${tappe.length}</div><div class="page-eyebrow">Tapp${tappe.length === 1 ? 'a' : 'e'}</div></div>
+      <div class="stat-tile"><div class="stat-tile-value">${vacanze.length}</div><div class="page-eyebrow">Vacanz${vacanze.length === 1 ? 'a' : 'e'}</div></div>
+    </div>`;
+
+  let evidenzaHtml = '';
+  if (evidenza) {
+    const augmented = await augmentVacanzaPerCard(evidenza.vacanza);
+    evidenzaHtml = `
+      <div class="home-section">
+        <div class="home-section-title">Vacanza in evidenza</div>
+        <div class="home-section-sub">${escapeHtml(labelVacanzaInEvidenza(evidenza))}</div>
+        <div class="home-featured">${vacCardHtml(augmented)}</div>
+      </div>`;
+  }
+
+  const ctaHtml = `
+    <div class="home-section">
+      <div class="home-section-title">Comincia da qui</div>
+      <div class="home-section-sub">I tre modi di partire: da dove sei, da come ti senti, o da dove vuoi andare.</div>
+      <div class="home-cta-grid">
+        <button class="cta-tile" data-action="goto-view" data-view="esplora">
+          <div class="cta-tile-icon"><i class="fa-solid fa-binoculars"></i></div>
+          <div class="cta-tile-title">Esplora i dintorni</div>
+          <div class="cta-tile-note">Destinazioni entro un raggio da dove sei, con i tempi reali per arrivarci: utile quando hai del tempo libero e non sai ancora dove andare.</div>
+        </button>
+        <div class="cta-tile cta-tile--muted" data-action="home-mood-soon">
+          <div class="cta-tile-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+          <div class="cta-tile-title">Voglio una giornata relax<span class="badge badge--muted" style="margin-left:8px;">In arrivo</span></div>
+          <div class="cta-tile-note">Suggerimenti per stato d'animo, in base a indicatori come Relax, Natura o Cultura: arriva dopo.</div>
+        </div>
+        <button class="cta-tile" data-action="home-new-vacanza">
+          <div class="cta-tile-icon"><i class="fa-solid fa-hiking"></i></div>
+          <div class="cta-tile-title">Voglio organizzare una vacanza</div>
+          <div class="cta-tile-note">Scegli una destinazione, definisci i giorni, riempili di tappe.</div>
+        </button>
+      </div>
+    </div>`;
+
+  const recentiHtml = recenti.length
+    ? `<div class="home-section">
+        <div class="home-section-title">Aggiunte di recente</div>
+        <div class="item-list">${recenti.map(recentItemRowHtml).join('')}</div>
+      </div>`
+    : '';
+
   canvas.innerHTML = `
-    <div class="page">
+    <div class="page page-wide">
       <div class="page-header">
         <div>
           <div class="page-eyebrow">Home</div>
-          <div class="page-title">Work in progress</div>
-          <div class="page-note">Questa sezione non è stata ancora progettata: arriverà nella fase UX del refactor.</div>
+          <div class="page-title">Il tuo archivio di viaggio</div>
+          <div class="page-note">Non cercare solo posti dove andare. Costruisci esperienze da vivere.</div>
         </div>
       </div>
+      ${statsHtml}
+      ${ctaHtml}
+      ${evidenzaHtml}
+      ${recentiHtml}
     </div>`;
 }

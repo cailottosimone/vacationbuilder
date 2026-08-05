@@ -1,7 +1,152 @@
-# Vacation Builder — v35 (aggiunta rapida tappa anche in Partenza/Rientro)
+# Vacation Builder — v41 (Esplora: rifiniture su layout e bug)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
 online per natura). Installabile come PWA.
+
+## Novità v41 — rifiniture su Esplora
+
+- **Bug della sovrapposizione risolto anche in modalità Coordinate**, non solo in "Posizione
+  attuale" come nella v40: il segnalino "Riconosciute: ..." finiva dentro l'input perché stava
+  annidato nello stesso `.field` dell'input invece che fuori, come accade correttamente nei form
+  Destinazione/Tappa. Ora la struttura è la stessa ovunque.
+- **Sidebar riorganizzata in tre sezioni pieghevoli** (Punto di partenza, Distanza e tempo,
+  Filtri), per non far crescere la colonna in verticale: ognuna mostra un riepilogo di quello che
+  contiene anche da chiusa (es. "Punto di partenza · Vicenza", "Distanza e tempo · entro 50 km",
+  "Filtri · 2 attivi"), così sai cosa hai impostato senza doverle riaprire.
+- **La linea d'aria ora ha lo stesso trattamento visivo degli altri filtri di distanza/tempo**
+  (stessa riga, stesso stile di campo), dentro "Distanza e tempo" insieme ad auto e a piedi,
+  invece di essere un campo isolato e più grande sopra a tutto il resto. Resta comunque lei a
+  decidere quali destinazioni calcolare — è l'unica che evita di sprecare chiamate al servizio di
+  routing per cose troppo lontane — ma non deve più sembrare un cittadino di serie A rispetto agli
+  altri filtri.
+- **Tolta la dicitura sul treno**: non aggiungeva nulla, l'assenza si nota da sé.
+- **Il risultato torna a includere la destinazione di partenza** (quando parti da una
+  destinazione dell'archivio): ora che le tappe a cascata esistono, ha senso rivederla in elenco
+  con le sue tappe espandibili, invece di nasconderla.
+- **Card di risultato**: la colonna dei risultati ora ha lo stesso contorno della colonna dei
+  filtri (stesso stile di card), anche da vuota — prima "Nessuna destinazione trovata" era testo
+  nudo senza cornice, sbilanciato rispetto alla sidebar accanto.
+
+## Novità v40 — restyling Esplora
+
+- **Layout a due colonne**: filtri in una colonna fissa a sinistra (sticky), risultati a destra
+  a piena larghezza — prima tutto il form era incapsulato in un blocco largo 680px fisso, anche
+  su schermi larghi.
+- **Raggio di ricerca**: input stretto con "km" accanto, non più un campo a piena larghezza per
+  un numero di poche cifre.
+- **Filtri sui tempi di viaggio**: rifatti in coppie Km/Min per Auto e A piedi, stesso peso
+  visivo per ognuno. Prima la riga usava lo stesso componente a griglia della barra di ricerca
+  degli elenchi (pensato per "campo di testo largo + select strette"), che qui gonfiava "Km linea
+  d'aria" a dismisura rispetto agli altri tre campi. Quel campo era anche un doppione — il Raggio
+  già filtra sulla linea d'aria — quindi è stato rimosso, e al suo posto è comparso "Min a piedi",
+  che esisteva già nei dati salvati ma non era mai stato collegato a un campo.
+- **Posizione attuale**: risolta la sovrapposizione tra il bottone "Rileva posizione" e l'avviso
+  sotto — un margine negativo pensato per l'input testuale delle coordinate veniva riusato anche
+  qui, dove non c'entrava.
+- **Niente più la destinazione di partenza tra i risultati**: cercare nei dintorni di una
+  destinazione ora esclude quella stessa destinazione dall'elenco.
+- **Tappe a cascata**: ogni destinazione con tappe salvate è espandibile (freccetta a sinistra) e
+  mostra le sue tappe subito sotto, rientrate; sia la destinazione sia ogni tappa sono cliccabili
+  e portano alla scheda della destinazione. Le tappe si caricano solo quando espandi una riga, non
+  tutte in anticipo.
+- **Mappa sotto la tabella** invece che sopra, così i risultati restano il primo contenuto che
+  incontri.
+
+## Novità v39 — ordine Home, respiro, naming Esplora
+
+- **Home**: "Comincia da qui" ora viene prima di "Vacanza in evidenza" — le azioni rapide sono il
+  motivo per cui apri la Home, la vacanza in evidenza è un'informazione, non un'azione: giusto
+  che sia la prima cosa cliccabile che incontri.
+- **Respiro dei titoli, non solo nelle card**: il blocco eyebrow/titolo/nota riusato in cima a
+  *ogni* pagina dell'app (non solo Home) aveva margini troppo stretti — un'etichetta di 11px
+  attaccata a un titolo di 30px si legge peggio. Aumentati leggermente i distacchi verticali. Lo
+  stesso per i riquadri della Home (cruscotto, card "Comincia da qui", titoli di sezione): più
+  aria tra numero ed etichetta, tra icona/titolo/descrizione, tra un blocco e il successivo.
+- **"Ho una giornata libera" → "Esplora i dintorni"**: il titolo precedente citava l'esempio del
+  brief originale ma non rendeva chiaro cosa fa davvero quella sezione. Il nuovo titolo rispecchia
+  il nome della sezione (Esplora) a cui porta, con la spiegazione concreta nel testo sotto.
+
+## Novità v38 — Home
+
+La Home era finora uno stub vuoto. Ora è il punto di ingresso previsto dal progetto: i tre modi
+di cominciare (Esplorazione, Stato d'animo, Progettazione vacanza), più un cruscotto e un modo
+per rientrare veloce in quello che stavi facendo.
+
+- **Cruscotto**: numero di destinazioni, tappe e vacanze in archivio, in tre riquadri.
+- **Vacanza in evidenza**: mostra sempre la vacanza più rilevante in questo momento, con una
+  logica a cascata — se una è in corso oggi, quella; altrimenti la prossima futura più vicina, se
+  hai impostato le date; altrimenti quella su cui hai lavorato più di recente ("Riprendi da
+  qui"), così la sezione ha sempre senso anche se non pianifichi mai con date precise.
+- **Comincia da qui**: le tre card previste dal progetto — "Ho una giornata libera" porta a
+  Esplora (già pronta); "Voglio organizzare una vacanza" apre subito il form di una nuova
+  vacanza; "Voglio una giornata relax" è visibilmente segnata **In arrivo** e spiega perché non
+  è ancora lì (serve prima costruire gli indicatori numerici — Relax, Natura, Cultura... — su
+  tappe e destinazioni, che è un pezzo di modello dati a sé, rimandato di proposito su tua
+  indicazione).
+- **Aggiunte di recente**: le ultime destinazioni e tappe create, per rientrare veloce dove
+  stavi lavorando senza dover cercare.
+
+Riusa interamente il sistema di card della v36/v37 (la vacanza in evidenza è la stessa
+`vacCardHtml` dell'elenco Vacanze, le righe recenti sono lo stesso `item-row` di
+Destinazioni/Vacanze): nessun componente visivo nuovo da mantenere a parte i tre pezzi specifici
+di questa pagina (riquadri del cruscotto, card di ingresso "Comincia da qui").
+
+Un effetto collaterale utile sistemato per farlo funzionare: cliccare una destinazione o una
+vacanza da fuori le rispettive sezioni (cioè dalla Home) ora cambia correttamente la vista attiva
+nel menu — prima quell'azione dava per scontato di essere già dentro Destinazioni o Vacanze, cosa
+sempre vera finché non è esistito un altro punto da cui selezionarle.
+
+## Novità v37 — fix card Vacanze e respiro card Tappa
+
+- **Card Vacanze**: i badge delle destinazioni toccate finivano troncati con una barra di
+  scorrimento orizzontale, sia in griglia che a righe. Causa: un vincolo di larghezza
+  (`max-width: 40%; overflow-x: auto`) pensato per il vecchio layout a riga singola non
+  interrotta — ormai obsoleto da quando le righe elenco vanno a capo. Rimosso: ora badge e stat
+  vanno semplicemente a capo, niente più scroll, su desktop e mobile.
+- **Card Tappa**: badge, durata, coordinate e nota erano attaccati tra loro perché la card non
+  era un contenitore con spaziatura automatica — dipendeva da margin messi a mano, e diversi
+  elementi ne erano rimasti senza. Ora la card è un contenitore verticale con respiro costante
+  tra ogni blocco; durata e coordinate, essendo due micro-dati imparentati, stanno appaiate sulla
+  stessa riga invece di impilate.
+
+## Novità v36 — sistema di card condiviso
+
+Questa versione non tocca modello dati né IndexedDB: è un intervento solo di presentazione,
+mirato alle card di tutta l'app (Destinazioni, Vacanze, Tappe, giorni del planner).
+
+- **Un solo sistema di badge e "stat" riusato ovunque**, al posto di quattro varianti diverse
+  che si erano accumulate nel tempo (`categoria-badge`, `stamp`/`stamp-vuoto`,
+  `item-card-meta`/`item-row-meta`/`tappa-card-meta`, il residuo morto `badge-tipo-vacanza` di
+  quando esisteva ancora la distinzione fissa/itinerante): ora ci sono solo `.badge` (appartenenza:
+  categoria, tipo, destinazione) e `.card-stat` (dato riassuntivo con icona, stesso stile già
+  usato nell'header di una Destinazione per "N tappe" — riusato invece di reinventarlo). Una
+  variante "muted" per l'uno e per l'altro copre le informazioni secondarie (tipo non principale
+  di una tappa, "nessuna tappa ancora" su un giorno).
+- **Le card Vacanza, prima quasi vuote (solo nome e "N giorni"), ora mostrano**: il periodo, se
+  hai impostato le date; il numero di persone, se più di una; le destinazioni toccate
+  dall'itinerario (fino a 3, poi "+N") — utile soprattutto nell'elenco a griglia/righe per
+  distinguere colpo d'occhio una vacanza dall'altra senza aprirla.
+- **Le card Tappa mostrano il tipo principale come badge vero** (prima compariva solo nel titolo
+  del gruppo sopra, invisibile se la card viene vista fuori contesto), e i tipi secondari sono
+  badge "muted" invece di una riga di testo semplice "anche: X".
+- **I giorni del planner mostrano anche quante voci hanno pianificate** accanto alla data (es.
+  "Giorno 2 · mer 12 ago · 3 voci"), e le destinazioni toccate sono ora badge veri invece del
+  vecchio "timbro" (`.stamp`) dedicato solo a quel punto dell'app.
+- **Hover coerente su tutte le card cliccabili**: alle card della timeline (Partenza, Tappa,
+  Spostamento, Rientro) mancava del tutto un feedback al passaggio del mouse, unica card
+  dell'app a non averlo — ora ha un'ombra leggera, senza lo spostamento verticale delle altre
+  card (qui non serve: il click avviene sempre da un bottone esplicito, non dalla card intera).
+- **Gerarchia dimensionale delle card confermata, non appiattita**: i tre raggi di bordo
+  (`--radius-l` per le card "vetrina" di un elenco, `--radius-m` per le card annidate/di lavoro,
+  `--radius-s` per input e bottoni) restano tre livelli distinti apposta — è quella la gerarchia
+  visiva richiesta, uniformarli tutti allo stesso valore l'avrebbe cancellata invece di
+  rinforzarla.
+
+Una scelta lasciata così com'era, di proposito: le card **Tappa** restano senza un riquadro
+segnaposto quando manca la foto (a differenza di Destinazione/Vacanza, che ne hanno sempre uno).
+Sono card più dense, tante per pagina, spesso senza foto (un incrocio, un belvedere): riservare
+comunque lo spazio dell'immagine le avrebbe appesantite senza motivo. Se preferisci vederle
+allineate anche su questo, è un cambio piccolo e mirato.
 
 ## Novità v35
 

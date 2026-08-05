@@ -5,7 +5,7 @@ import { showToast } from './components/toast.js';
 import { initSpotlight } from './components/spotlight.js';
 import { apriSelezioneStampa } from './services/print.js';
 import {
-  renderDestinazioniList, renderCanvasRepository, renderVacanzeList, renderCanvasEsplora,
+  renderDestinazioniList, renderCanvasRepository, renderVacanzeList, renderCanvasEsplora, toggleEsploraTappe,
   renderCanvasImpostazioni, renderCanvasBackup, renderCanvasHome,
   openDestinazioneForm, handleDeleteDestinazione, openTappaForm, handleDeleteTappa,
   openTipoTappaForm, handleDeleteTipoTappa, openCategoriaDestinazioneForm, handleDeleteCategoriaDestinazione,
@@ -53,7 +53,7 @@ export const state = {
     originePosizione: null, // {lat,lng} rilevata via geolocalizzazione
     raggioKm: 50, // raggio di ricerca iniziale, in linea d'aria: definisce il pool di candidate
     filtri: { nome: '', stato: '', regione: '', provincia: '', categorieIds: [] },
-    filtriValori: { lineaAriaMax: '', autoKmMax: '', autoMinMax: '', piediKmMax: '', piediMinMax: '' },
+    filtriValori: { autoKmMax: '', autoMinMax: '', piediKmMax: '', piediMinMax: '' },
   },
 };
 
@@ -229,11 +229,25 @@ async function handleCanvasClick(e) {
   const action = el.dataset.action;
   const id = el.dataset.id;
 
-  if (action === 'new-destinazione') {
+  if (action === 'goto-view') {
+    await goToView(el.dataset.view);
+  } else if (action === 'home-new-vacanza') {
+    // Come "Nuova vacanza" da dentro Vacanze, ma partendo dalla Home: prima si passa alla vista
+    // Vacanze (così il salvataggio del form apre subito il planner della vacanza appena creata,
+    // invece di lasciare l'utente sulla Home con la card aggiornata da scoprire).
+    state.view = 'vacanze';
+    state.selectedVacanzaId = null;
+    renderRailNav();
+    openVacanzaForm();
+  } else if (action === 'home-mood-soon') {
+    showToast('In arrivo: prima serve costruire gli indicatori (Relax, Natura, Cultura…) su tappe e destinazioni.', 'info');
+  } else if (action === 'new-destinazione') {
     openDestinazioneForm();
   } else if (action === 'select-destinazione') {
+    state.view = 'destinazioni';
     state.selectedDestinazioneId = id;
     state.activeTipoFilter = new Set();
+    renderRailNav();
     await renderCanvas();
   } else if (action === 'back-to-destinazioni') {
     state.selectedDestinazioneId = null;
@@ -244,8 +258,10 @@ async function handleCanvasClick(e) {
   } else if (action === 'new-vacanza') {
     openVacanzaForm();
   } else if (action === 'select-vacanza') {
+    state.view = 'vacanze';
     state.selectedVacanzaId = id;
     state.selectedGiornataId = null;
+    renderRailNav();
     await renderCanvas();
   } else if (action === 'back-to-vacanze') {
     state.selectedVacanzaId = null;
@@ -365,6 +381,8 @@ async function handleCanvasClick(e) {
     state.activeTipoFilter = new Set();
     renderRailNav();
     await renderCanvas();
+  } else if (action === 'toggle-esplora-tappe') {
+    await toggleEsploraTappe(id);
   } else if (action === 'set-impostazioni-tab') {
     state.impostazioniTab = el.dataset.tab;
     await renderCanvas();
