@@ -6,7 +6,7 @@ import { initSpotlight } from './components/spotlight.js';
 import { apriSelezioneStampa } from './services/print.js';
 import {
   renderDestinazioniList, renderCanvasRepository, renderVacanzeList, renderCanvasEsplora, toggleEsploraTappe,
-  renderCanvasImpostazioni, renderCanvasBackup, renderCanvasHome,
+  renderCanvasImpostazioni, renderCanvasHome,
   openDestinazioneForm, handleDeleteDestinazione, openTappaForm, handleDeleteTappa,
   openTipoTappaForm, handleDeleteTipoTappa, openCategoriaDestinazioneForm, handleDeleteCategoriaDestinazione,
   openCategoriaSpesaForm, handleDeleteCategoriaSpesa,
@@ -28,7 +28,6 @@ export const NAV_ITEMS = [
   { key: 'vacanze', label: 'Vacanze', icon: '<i class="fa-solid fa-hiking"></i>' },
   { key: 'esplora', label: 'Esplora', icon: '<i class="fa-solid fa-binoculars"></i>' },
   { key: 'impostazioni', label: 'Impostazioni', icon: '<i class="fa-solid fa-gear"></i>' },
-  { key: 'backup', label: 'Backup', icon: '<i class="fa-solid fa-database"></i>' },
 ];
 
 export const state = {
@@ -38,7 +37,7 @@ export const state = {
   selectedGiornataId: null,
   activeTipoFilter: new Set(),
   destinazioniListView: 'griglia', // 'griglia' | 'righe' — solo per la sessione
-  impostazioniTab: 'categorie', // 'categorie' | 'tipi' | 'categorieSpesa' | 'routing' | 'navigazione'
+  impostazioniTab: 'categorie', // 'categorie' | 'tipi' | 'categorieSpesa' | 'routing' | 'navigazione' | 'backup'
   vacanzaTab: 'programma', // 'programma' | 'budget' | 'lista'
   listaGiornoSelezionato: null, // null = lista generale della vacanza
   vacanzeListView: 'griglia',
@@ -205,7 +204,7 @@ export async function renderCanvas() {
       else await renderVacanzeList();
     } else if (state.view === 'esplora') await renderCanvasEsplora();
     else if (state.view === 'impostazioni') await renderCanvasImpostazioni();
-    else await renderCanvasBackup();
+    else await renderCanvasHome();
   } catch (err) {
     console.error('Vacation Builder — errore di rendering:', err);
     canvas.innerHTML = `<div class="page-empty">

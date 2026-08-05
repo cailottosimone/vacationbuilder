@@ -839,6 +839,7 @@ export async function renderCanvasImpostazioni() {
     <button class="settings-tab ${tab === 'categorieSpesa' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="categorieSpesa">Categorie spesa</button>
     <button class="settings-tab ${tab === 'routing' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="routing">Routing</button>
     <button class="settings-tab ${tab === 'navigazione' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="navigazione">Navigazione</button>
+    <button class="settings-tab ${tab === 'backup' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="backup">Backup</button>
   </div>`;
 
   let contenuto = '';
@@ -934,7 +935,7 @@ export async function renderCanvasImpostazioni() {
         <button type="submit" class="btn btn-sm btn-primary">Salva</button>
       </form>
       <div id="ors-key-status" class="hint" style="margin-top:8px;"></div>`;
-  } else {
+  } else if (tab === 'navigazione') {
     const navNascostiCorrenti = config.navNascosti || [];
     const righeNav = NAV_ITEMS.map((item) => {
       const bloccata = item.key === 'impostazioni';
@@ -959,15 +960,41 @@ export async function renderCanvasImpostazioni() {
         <thead><tr><th>Sezione</th><th>Visibilità</th></tr></thead>
         <tbody>${righeNav}</tbody>
       </table></div>`;
+  } else {
+    contenuto = `
+      <p class="settings-tab-hint">Tutto resta sul tuo Mac: nessun server, nessun account. Esporta di tanto in tanto un file JSON come copia di sicurezza.</p>
+      <div class="backup-panel">
+        <div class="backup-card">
+          <div class="backup-card-title">Esporta backup</div>
+          <div class="backup-card-sub">Scarica un file .json con destinazioni, tappe, vacanze, giornate, pianificazioni e tipi di tappa.</div>
+          <button class="btn btn-primary" id="btn-export">Esporta ora</button>
+        </div>
+        <div class="backup-card">
+          <div class="backup-card-title">Importa backup</div>
+          <div class="backup-card-sub">Ripristina da un file esportato in precedenza. I record con lo stesso id verranno sovrascritti, gli altri aggiunti: nulla viene cancellato a priori.</div>
+          <input type="file" accept="application/json" id="input-import" style="display:none">
+          <button class="btn btn-ghost" id="btn-import">Scegli file…</button>
+        </div>
+      </div>`;
   }
+
+  const titoliTab = {
+    categorie: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
+    tipi: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
+    categorieSpesa: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
+    routing: ['Routing', 'La chiave per calcolare distanze e durate reali su strada, non solo in linea d\'aria.'],
+    navigazione: ['Navigazione', 'Quali sezioni mostrare nel menu.'],
+    backup: ['Il tuo archivio, al sicuro', 'Tutto resta sul tuo Mac: nessun server, nessun account.'],
+  };
+  const [titoloTab, noteTab] = titoliTab[tab] || titoliTab.categorie;
 
   canvas.innerHTML = `
     <div class="page">
       <div class="page-header">
         <div>
           <div class="page-eyebrow">Impostazioni</div>
-          <div class="page-title">Categorie riutilizzabili</div>
-          <div class="page-note">Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui.</div>
+          <div class="page-title">${escapeHtml(titoloTab)}</div>
+          <div class="page-note">${escapeHtml(noteTab)}</div>
         </div>
       </div>
       ${tabsHtml}
@@ -986,6 +1013,49 @@ export async function renderCanvasImpostazioni() {
     });
   }
 
+  const btnExport = document.getElementById('btn-export');
+  if (btnExport) {
+    btnExport.addEventListener('click', async () => {
+      const data = await Store.exportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `vacation-builder-backup-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast('Backup esportato');
+    });
+
+    const fileInput = document.getElementById('input-import');
+    document.getElementById('btn-import').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const text = await file.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        await showModal({ title: 'File non valido', bodyHtml: 'Il file scelto non è un JSON leggibile.', confirmLabel: 'Ho capito' });
+        return;
+      }
+      const ok = await showModal({
+        title: 'Importare questo backup?',
+        bodyHtml: 'I record con lo stesso id di quelli già presenti verranno sovrascritti con i valori del file.',
+        confirmLabel: 'Importa',
+        danger: true,
+      });
+      if (!ok) return;
+      await Store.importAll(parsed);
+      await renderCanvas();
+      showToast('Archivio aggiornato dal backup');
+    });
+  }
+
   canvas.querySelectorAll('[data-nav-toggle]').forEach((checkbox) => {
     checkbox.addEventListener('change', async () => {
       const chiave = checkbox.dataset.navToggle;
@@ -1001,78 +1071,7 @@ export async function renderCanvasImpostazioni() {
   });
 }
 
-/* --- Backup --- */
-
-
-export async function renderCanvasBackup() {
-  canvas.innerHTML = `
-    <div class="page">
-      <div class="page-header">
-        <div>
-          <div class="page-eyebrow">Backup</div>
-          <div class="page-title">Il tuo archivio, al sicuro</div>
-          <div class="page-note">Tutto resta sul tuo Mac: nessun server, nessun account. Esporta di tanto in tanto un file JSON come copia di sicurezza.</div>
-        </div>
-      </div>
-      <div class="backup-panel">
-        <div class="backup-card">
-          <div class="backup-card-title">Esporta backup</div>
-          <div class="backup-card-sub">Scarica un file .json con destinazioni, tappe, vacanze, giornate, pianificazioni e tipi di tappa.</div>
-          <button class="btn btn-primary" id="btn-export">Esporta ora</button>
-        </div>
-        <div class="backup-card">
-          <div class="backup-card-title">Importa backup</div>
-          <div class="backup-card-sub">Ripristina da un file esportato in precedenza. I record con lo stesso id verranno sovrascritti, gli altri aggiunti: nulla viene cancellato a priori.</div>
-          <input type="file" accept="application/json" id="input-import" style="display:none">
-          <button class="btn btn-ghost" id="btn-import">Scegli file…</button>
-        </div>
-      </div>
-    </div>`;
-
-  document.getElementById('btn-export').addEventListener('click', async () => {
-    const data = await Store.exportAll();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const stamp = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `vacation-builder-backup-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    showToast('Backup esportato');
-  });
-
-  const fileInput = document.getElementById('input-import');
-  document.getElementById('btn-import').addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files[0];
-    if (!file) return;
-    const text = await file.text();
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      await showModal({ title: 'File non valido', bodyHtml: 'Il file scelto non è un JSON leggibile.', confirmLabel: 'Ho capito' });
-      return;
-    }
-    const ok = await showModal({
-      title: 'Importare questo backup?',
-      bodyHtml: 'I record con lo stesso id di quelli già presenti verranno sovrascritti con i valori del file.',
-      confirmLabel: 'Importa',
-      danger: true,
-    });
-    if (!ok) return;
-    await Store.importAll(parsed);
-    await renderCanvas();
-    showToast('Archivio aggiornato dal backup');
-  });
-}
-
-/* ---------------------------------------------------------------------- */
-/* Azioni del canvas                                                       */
-/* ---------------------------------------------------------------------- */
+/* --- Azioni del canvas --- */
 
 
 export async function handleDeleteDestinazione(id) {

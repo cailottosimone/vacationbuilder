@@ -1,7 +1,18 @@
-# Vacation Builder — v41 (Esplora: rifiniture su layout e bug)
+# Vacation Builder — v42 (Backup dentro Impostazioni)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
 online per natura). Installabile come PWA.
+
+## Novità v42
+
+- **Backup è ora una scheda di Impostazioni**, invece di una voce a sé nel menu — stessa
+  esportazione/importazione di sempre, stesso comportamento, solo raggiungibile da Impostazioni →
+  Backup. Libera uno slot nel menu laterale.
+- Il titolo della pagina Impostazioni ora cambia in base alla scheda aperta (prima restava fisso
+  su "Categorie riutilizzabili" anche su Routing o Navigazione — un'incongruenza preesistente
+  diventata più evidente aggiungendo Backup, quindi l'ho sistemata insieme).
+- Nessun impatto sui dati: chi aveva "Backup" nascosto dal menu in Impostazioni → Navigazione non
+  nota differenze, quella preferenza salvata resta semplicemente inutilizzata.
 
 ## Novità v41 — rifiniture su Esplora
 
