@@ -8,3 +8,4 @@
 export * from './archivio.js';
 export * from './vacanze.js';
 export * from './budget.js';
+export * from './liste-predefinite.js';

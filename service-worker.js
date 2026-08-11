@@ -3,7 +3,7 @@
 // OpenStreetMap, Openrouteservice) NON sono precaricate qui: restano "online-only" come da
 // filosofia dell'app (mappe/routing richiedono comunque una connessione).
 
-const CACHE_NAME = 'vacation-builder-shell-v2'; // <-- alza il numero ad ogni modifica dei file per invalidare la cache vecchia
+const CACHE_NAME = 'vacation-builder-shell-v5'; // <-- alza il numero ad ogni modifica dei file per invalidare la cache vecchia
 
 const APP_SHELL = [
   './',
@@ -18,13 +18,22 @@ const APP_SHELL = [
   './js/repository/archivio.js',
   './js/repository/vacanze.js',
   './js/repository/budget.js',
+  './js/repository/liste-predefinite.js',
   './js/services/print.js',
+  './js/data/config.js',
+  './js/data/auth.js',
+  './js/data/cloud.js',
+  './js/data/sync.js',
   './js/components/card.js',
   './js/components/dialog.js',
   './js/components/prezzo-widget.js',
+  './js/components/quantita-widget.js',
+  './js/components/luogo-stoccaggio-select.js',
   './js/components/timeline.js',
+  './js/components/sync-indicator.js',
   './js/views/vacanza.js',
   './js/views/archivio.js',
+  './js/views/liste-predefinite.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-180.png',

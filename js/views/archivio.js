@@ -8,6 +8,8 @@ import {
 import { destCardHtml, destRowHtml, vacCardHtml, vacRowHtml, tappaCardHtml, recentItemRowHtml, chipCheckboxesHtml, emptyListNote } from '../components/card.js';
 import { state, canvas, renderCanvas, renderRailNav, getNavNascosti, updateNavNascostiCache, NAV_ITEMS } from '../app.js';
 import { showToast } from '../components/toast.js';
+import * as auth from '../data/auth.js';
+import * as sync from '../data/sync.js';
 
 /** Cache di sessione delle liste: popolate ad ogni render, lette anche dalle card in
  * components/card.js (da cui vengono importate) per i badge categoria. */
@@ -837,9 +839,11 @@ export async function renderCanvasImpostazioni() {
     <button class="settings-tab ${tab === 'categorie' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="categorie">Categorie destinazioni</button>
     <button class="settings-tab ${tab === 'tipi' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="tipi">Tipi di tappa</button>
     <button class="settings-tab ${tab === 'categorieSpesa' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="categorieSpesa">Categorie spesa</button>
+    <button class="settings-tab ${tab === 'luoghiStoccaggio' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="luoghiStoccaggio">Luoghi di stoccaggio</button>
     <button class="settings-tab ${tab === 'routing' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="routing">Routing</button>
     <button class="settings-tab ${tab === 'navigazione' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="navigazione">Navigazione</button>
     <button class="settings-tab ${tab === 'backup' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="backup">Backup</button>
+    <button class="settings-tab ${tab === 'account' ? 'is-active' : ''}" data-action="set-impostazioni-tab" data-tab="account">Account e sincronizzazione</button>
   </div>`;
 
   let contenuto = '';
@@ -922,6 +926,32 @@ export async function renderCanvasImpostazioni() {
             </table></div>`
           : `<div class="empty-list-note">Nessuna categoria ancora.</div>`
       }`;
+  } else if (tab === 'luoghiStoccaggio') {
+    const luoghi = await repo.listLuoghiStoccaggio();
+    const righe = await Promise.all(
+      luoghi.map(async (l) => {
+        const usage = await repo.checkLuogoStoccaggioUsage(l.id);
+        return `<tr>
+          <td>${escapeHtml(l.nome)}</td>
+          <td class="settings-td-num">${usage.count} voc${usage.count === 1 ? 'e' : 'i'}</td>
+          <td class="settings-td-actions">
+            <button class="btn btn-icon btn-ghost" data-action="edit-luogo-stoccaggio" data-id="${l.id}" title="Modifica"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-icon btn-ghost" data-action="delete-luogo-stoccaggio" data-id="${l.id}" title="Elimina"><i class="fa-solid fa-trash-can"></i></button>
+          </td>
+        </tr>`;
+      })
+    );
+    contenuto = `
+      <p class="settings-tab-hint">Dove riporre le cose della valigia (es. "Valigia grande rossa", "Zaino blu", "Auto"). Assegnale alle voci Lista di una vacanza per avere un report di cosa va dove. Puoi crearle anche al volo mentre compili una voce, col pulsante "+" accanto al menu del luogo.</p>
+      <div class="settings-tab-toolbar"><button class="btn btn-sm btn-primary" data-action="new-luogo-stoccaggio"><i class="fa-solid fa-plus"></i> Nuovo luogo</button></div>
+      ${
+        righe.length
+          ? `<div class="settings-table-wrap"><table class="settings-table">
+              <thead><tr><th>Nome</th><th>Utilizzo</th><th></th></tr></thead>
+              <tbody>${righe.join('')}</tbody>
+            </table></div>`
+          : `<div class="empty-list-note">Nessun luogo ancora.</div>`
+      }`;
   } else if (tab === 'routing') {
     contenuto = `
       <p class="settings-tab-hint">
@@ -960,9 +990,9 @@ export async function renderCanvasImpostazioni() {
         <thead><tr><th>Sezione</th><th>Visibilità</th></tr></thead>
         <tbody>${righeNav}</tbody>
       </table></div>`;
-  } else {
+  } else if (tab === 'backup') {
     contenuto = `
-      <p class="settings-tab-hint">Tutto resta sul tuo Mac: nessun server, nessun account. Esporta di tanto in tanto un file JSON come copia di sicurezza.</p>
+      <p class="settings-tab-hint">Tutto resta sul tuo dispositivo: il backup manuale funziona sempre, anche senza collegare un account (vedi la tab Account e sincronizzazione per la sincronizzazione automatica tra dispositivi).</p>
       <div class="backup-panel">
         <div class="backup-card">
           <div class="backup-card-title">Esporta backup</div>
@@ -976,15 +1006,19 @@ export async function renderCanvasImpostazioni() {
           <button class="btn btn-ghost" id="btn-import">Scegli file…</button>
         </div>
       </div>`;
+  } else {
+    contenuto = await renderTabAccountHtml();
   }
 
   const titoliTab = {
     categorie: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
     tipi: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
     categorieSpesa: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
+    luoghiStoccaggio: ['Categorie riutilizzabili', "Le etichette che usi in tutto l'archivio: si aggiornano ovunque appena le modifichi qui."],
     routing: ['Routing', 'La chiave per calcolare distanze e durate reali su strada, non solo in linea d\'aria.'],
     navigazione: ['Navigazione', 'Quali sezioni mostrare nel menu.'],
-    backup: ['Il tuo archivio, al sicuro', 'Tutto resta sul tuo Mac: nessun server, nessun account.'],
+    backup: ['Il tuo archivio, al sicuro', 'Backup manuale: sempre disponibile, con o senza account collegato.'],
+    account: ['Account e sincronizzazione', 'Collega un account per avere lo stesso archivio su più dispositivi.'],
   };
   const [titoloTab, noteTab] = titoliTab[tab] || titoliTab.categorie;
 
@@ -1069,6 +1103,132 @@ export async function renderCanvasImpostazioni() {
       await renderCanvas();
     });
   });
+
+  bindTabAccountEvents();
+}
+
+/* --- Impostazioni: account e sincronizzazione --- */
+
+const STATO_SYNC_LABEL = {
+  offline: "Sei offline: le modifiche restano in locale e si sincronizzano da sole alla riconnessione.",
+  disconnesso: "Nessun account collegato: l'app funziona solo in locale su questo dispositivo.",
+  da_collegare: 'Account collegato: manca solo la decisione su come collegare questo dispositivo (vedi sotto).',
+  syncing: 'Sincronizzazione in corso…',
+  idle: 'Sincronizzato.',
+  error: "Errore nell'ultima sincronizzazione (vedi dettaglio sotto). Si ritenta automaticamente.",
+};
+
+async function renderTabAccountHtml() {
+  const user = auth.getCurrentUser();
+
+  if (!user) {
+    return `
+      <p class="settings-tab-hint">Collega un account per sincronizzare l'archivio (destinazioni, tappe, vacanze, categorie, indicatori, timeline, budget...) tra più dispositivi, mantenendo il funzionamento offline. Se non ti colleghi, l'app continua a funzionare esattamente come prima, solo in locale su questo dispositivo. Le foto restano comunque locali per dispositivo: usa l'export/import JSON in Backup per portarle su un altro dispositivo.</p>
+      <form id="form-account" class="settings-form">
+        <div class="field"><label class="field-label">Email</label><input type="email" name="email" required autocomplete="username"></div>
+        <div class="field"><label class="field-label">Password</label><input type="password" name="password" required minlength="6" autocomplete="current-password"></div>
+        <div class="field-row" style="margin-top:6px;">
+          <button type="submit" class="btn btn-primary" data-modo="accedi">Accedi</button>
+          <button type="submit" class="btn btn-ghost" data-modo="registrati">Crea account</button>
+        </div>
+        <div class="hint" id="account-form-hint" style="margin-top:10px;"></div>
+      </form>`;
+  }
+
+  if (await sync.needsLinkDecision()) {
+    const [destinazioni, vacanze] = await Promise.all([repo.listDestinazioni(), repo.listVacanze()]);
+    const haDatiLocali = destinazioni.length + vacanze.length > 0;
+    return `
+      <p class="settings-tab-hint">Accesso effettuato come <strong>${escapeHtml(user.email)}</strong>. Questo dispositivo non è ancora stato collegato alla sincronizzazione: scegli come procedere.</p>
+      <div class="settings-form" style="max-width:560px;display:flex;flex-direction:column;gap:14px;">
+        <div class="field" style="border:1px solid var(--border);border-radius:var(--radius-m);padding:14px;">
+          <label class="field-label">È il primo dispositivo che colleghi</label>
+          <div class="hint" style="margin-top:0;">Carica sul cloud i dati già presenti qui (${destinazioni.length} destinazioni, ${vacanze.length} vacanze, con tutto quello che contengono), così saranno disponibili anche sugli altri dispositivi quando li colleghi.</div>
+          <button type="button" class="btn btn-primary btn-block" id="btn-link-push" style="margin-top:10px;" ${haDatiLocali ? '' : 'disabled'}><i class="fa-solid fa-cloud-arrow-up"></i> Carica i dati locali sul cloud</button>
+        </div>
+        <div class="field" style="border:1px solid var(--border);border-radius:var(--radius-m);padding:14px;">
+          <label class="field-label">Ho già collegato un altro dispositivo</label>
+          <div class="hint" style="margin-top:0;">Scarica dal cloud i dati già sincronizzati da un altro dispositivo. ${haDatiLocali ? 'Attenzione: i dati già presenti qui su questo dispositivo NON verranno cancellati, ma in caso di conflitto sullo stesso record vince quello più recente.' : ''}</div>
+          <button type="button" class="btn btn-ghost btn-block" id="btn-link-pull" style="margin-top:10px;"><i class="fa-solid fa-cloud-arrow-down"></i> Scarica i dati dal cloud</button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="btn-account-logout" style="align-self:flex-start;">Esci da ${escapeHtml(user.email)}</button>
+      </div>`;
+  }
+
+  const s = sync.state;
+  return `
+    <p class="settings-tab-hint">Collegato come <strong>${escapeHtml(user.email)}</strong>. L'archivio si sincronizza automaticamente con gli altri dispositivi collegati allo stesso account. Le foto si caricano una sola volta a testa (non vengono rimandate a ogni modifica del testo) e vengono scaricate sugli altri dispositivi al primo pull che le riguarda.</p>
+    <div class="settings-form">
+      <div class="field">
+        <label class="field-label">Stato</label>
+        <div class="hint" style="margin-top:0;">${escapeHtml(STATO_SYNC_LABEL[s.status] || s.status)}</div>
+        ${s.lastError ? `<div class="hint" style="color:var(--red-dark);margin-top:4px;">${escapeHtml(s.lastError)}</div>` : ''}
+      </div>
+      <div class="field">
+        <label class="field-label">Modifiche in attesa di sincronizzazione</label>
+        <div class="hint" style="margin-top:0;">${s.pendingCount}</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Ultima sincronizzazione riuscita</label>
+        <div class="hint" style="margin-top:0;">${s.lastSyncedAt ? formatDate(s.lastSyncedAt.slice(0, 10)) + ' — ' + new Date(s.lastSyncedAt).toLocaleTimeString('it-IT') : 'Mai in questa sessione'}</div>
+      </div>
+      <div class="field-row" style="margin-top:6px;">
+        <button type="button" class="btn btn-ghost" id="btn-account-logout">Esci</button>
+      </div>
+    </div>`;
+}
+
+function bindTabAccountEvents() {
+  const form = document.getElementById('form-account');
+  if (form) {
+    const hint = document.getElementById('account-form-hint');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const modo = e.submitter?.dataset.modo || 'accedi';
+      const fd = new FormData(form);
+      const email = fd.get('email');
+      const password = fd.get('password');
+      hint.textContent = modo === 'registrati' ? 'Creazione account…' : 'Accesso…';
+      try {
+        if (modo === 'registrati') {
+          await auth.signUp(email, password);
+          hint.textContent = 'Account creato. Controlla la posta se ti viene chiesta una conferma, poi accedi.';
+        } else {
+          await auth.signIn(email, password);
+          await renderCanvas();
+          showToast('Accesso effettuato');
+        }
+      } catch (err) {
+        hint.textContent = err.message || 'Operazione non riuscita.';
+      }
+    });
+  }
+
+  const btnPush = document.getElementById('btn-link-push');
+  if (btnPush) {
+    btnPush.addEventListener('click', async () => {
+      await sync.linkPushingLocalData();
+      await renderCanvas();
+      showToast('Dati caricati sul cloud');
+    });
+  }
+
+  const btnPull = document.getElementById('btn-link-pull');
+  if (btnPull) {
+    btnPull.addEventListener('click', async () => {
+      await sync.linkPullingFromCloud();
+      await renderCanvas();
+      showToast('Dati scaricati dal cloud');
+    });
+  }
+
+  const btnLogout = document.getElementById('btn-account-logout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async () => {
+      await auth.signOut();
+      await renderCanvas();
+    });
+  }
 }
 
 /* --- Azioni del canvas --- */
@@ -1174,6 +1334,24 @@ export async function handleDeleteCategoriaSpesa(id) {
   await repo.deleteCategoriaSpesa(id);
   await renderCanvas();
   showToast('Categoria eliminata');
+}
+
+export async function handleDeleteLuogoStoccaggio(id) {
+  const luogo = await repo.getLuogoStoccaggio(id);
+  const usage = await repo.checkLuogoStoccaggioUsage(id);
+  if (usage.count > 0) {
+    await showModal({
+      title: 'Luogo ancora in uso',
+      bodyHtml: `"${escapeHtml(luogo.nome)}" è assegnato a <strong>${usage.count}</strong> voc${usage.count === 1 ? 'e' : 'i'} (Lista vacanza e/o liste predefinite). Riassegnale prima di eliminarlo, oppure rinomina questo luogo invece di cancellarlo.`,
+      confirmLabel: 'Ho capito',
+    });
+    return;
+  }
+  const ok = await showModal({ title: `Eliminare "${luogo.nome}"?`, bodyHtml: 'Nessuna voce lo sta usando: può essere rimosso senza conseguenze.', confirmLabel: 'Elimina', danger: true });
+  if (!ok) return;
+  await repo.deleteLuogoStoccaggio(id);
+  await renderCanvas();
+  showToast('Luogo eliminato');
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1430,6 +1608,19 @@ export function openCategoriaSpesaForm(categoria = null) {
     onSubmit: async (payload) => {
       if (isEdit) await repo.updateCategoriaSpesa(categoria.id, payload);
       else await repo.createCategoriaSpesa(payload);
+    },
+  });
+}
+
+export function openLuogoStoccaggioForm(luogo = null) {
+  const isEdit = !!luogo;
+  openNomeForm({
+    title: isEdit ? 'Modifica luogo di stoccaggio' : 'Nuovo luogo di stoccaggio',
+    nome: isEdit ? luogo.nome : '',
+    submitLabel: isEdit ? 'Salva modifiche' : 'Crea luogo',
+    onSubmit: async (payload) => {
+      if (isEdit) await repo.updateLuogoStoccaggio(luogo.id, payload);
+      else await repo.createLuogoStoccaggio(payload);
     },
   });
 }

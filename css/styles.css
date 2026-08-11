@@ -88,6 +88,29 @@ a { color: var(--blue); }
 .rail-nav-btn.is-active { background: var(--blue-soft); color: var(--blue-dark); }
 .rail-nav-icon { font-size: 19px; line-height: 1; }
 
+/* Pulsante di stato sincronizzazione, in fondo alla rail (stessa forma dei bottoni di
+   navigazione, per restare coerente col resto della colonna). */
+.sync-indicator {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  width: calc(100% - 20px); margin: auto 10px 14px; border: none; background: transparent;
+  border-radius: var(--radius-m); padding: 10px 6px; cursor: pointer; position: relative;
+  color: var(--text-faint); font-size: 10px; font-weight: 600; letter-spacing: 0.01em;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.sync-indicator:hover { background: var(--surface-soft); color: var(--text-soft); }
+.sync-indicator i { font-size: 16px; line-height: 1; }
+.sync-indicator-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sync-indicator.is-ok { color: #1E9E63; }
+.sync-indicator.is-attivo { color: var(--blue-dark); }
+.sync-indicator.is-attenzione { color: #B9770E; }
+.sync-indicator.is-errore { color: var(--red); }
+.sync-indicator.is-offline, .sync-indicator.is-muto { color: var(--text-faint); }
+.sync-badge-count {
+  position: absolute; top: 4px; right: 14px; background: var(--blue); color: #fff;
+  font-size: 9px; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 20px;
+  min-width: 15px; text-align: center;
+}
+
 /* ---------------------------------------------------------------------- */
 /* CANVAS — piena larghezza                                                */
 /* ---------------------------------------------------------------------- */
@@ -328,6 +351,7 @@ a { color: var(--blue); }
   background: linear-gradient(135deg, var(--blue-soft), var(--blue));
   display: flex; align-items: center; justify-content: center; color: var(--blue); font-size: 15px;
 }
+.item-row-thumb-placeholder i { color: #fff; font-size: 15px; }
 .item-row-title {
   font-size: 15px; font-weight: 700; color: var(--text);
   flex: 1 1 120px; min-width: 0;
@@ -567,8 +591,15 @@ a { color: var(--blue); }
 .field-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 7px; }
 .field-row { display: flex; gap: 12px; }
 .field-row .field { flex: 1; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; }
+.select-with-add { display: flex; gap: 8px; align-items: center; }
+.select-with-add select { flex: 1; }
 
-input[type=text], input[type=date], input[type=number], input[type=time], textarea, select {
+/* Form generico fuori dall'inspector (es. tab "Account e sincronizzazione" di Impostazioni). */
+.settings-form { max-width: 480px; }
+.btn-block { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+input[type=text], input[type=email], input[type=password], input[type=date], input[type=number], input[type=time], textarea, select {
   width: 100%; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-s);
   padding: 10px 13px; font-size: 14px; color: var(--text); transition: border-color 0.15s ease;
 }
@@ -586,6 +617,7 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 
 .type-toggle { display: flex; gap: 8px; }
 .type-toggle--stack { flex-direction: column; }
+.type-toggle--grid2 { display: grid; grid-template-columns: 1fr 1fr; }
 .type-toggle-btn { flex: 1; padding: 13px; border-radius: var(--radius-m); border: 1.5px solid var(--border); background: var(--surface); text-align: left; }
 .type-toggle-btn.is-selected { border-color: var(--blue); background: var(--blue-soft); }
 .type-toggle-title { font-size: 14.5px; font-weight: 700; color: var(--text); }
@@ -657,6 +689,8 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 .modal-usage-list { margin: 14px 0 4px; padding: 12px 14px; background: var(--red-soft); border-radius: var(--radius-s); font-size: 12.5px; color: var(--red-dark); }
 .modal-usage-list ul { margin: 6px 0 0; padding-left: 18px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.modal-actions--choices { flex-wrap: wrap; justify-content: flex-start; }
+.modal-actions--choices [data-role="cancel"] { margin-left: auto; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---------------------------------------------------------------------- */
@@ -685,7 +719,7 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 
 .settings-tab-panel { max-width: 780px; }
 .settings-tab-hint { font-size: 12.5px; color: var(--text-faint); line-height: 1.5; margin: 0 0 16px; }
-.settings-tab-toolbar { margin-bottom: 16px; }
+.settings-tab-toolbar { margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 10px; }
 
 .settings-table-wrap { border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; background: var(--surface); }
 .settings-table { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: fixed; }
@@ -974,7 +1008,23 @@ textarea { resize: vertical; min-height: 70px; line-height: 1.5; }
 .lista-voce-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lista-voce-costo { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--blue-dark); white-space: nowrap; }
 .lista-voce-costo.is-escluso { color: var(--text-faint); font-weight: 500; }
+.lista-voce-quantita { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--text-soft); white-space: nowrap; }
 .lista-voce-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.import-lista-elenco { border: 1px solid var(--border); border-radius: var(--radius-m); overflow: hidden; margin-bottom: 4px; }
+.import-lista-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.import-lista-row:last-child { border-bottom: none; }
+.import-lista-check { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; cursor: pointer; flex: 1; min-width: 0; }
+.import-lista-check input { width: 17px; height: 17px; accent-color: var(--blue); flex-shrink: 0; }
+
+.riepilogo-luoghi { margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-m); padding: 4px 14px; background: var(--surface-soft); }
+.riepilogo-luoghi summary { padding: 10px 0; font-size: 13.5px; font-weight: 700; color: var(--text); cursor: pointer; }
+.riepilogo-luoghi-body { padding: 2px 0 12px; display: flex; flex-direction: column; gap: 6px; }
+.riepilogo-luoghi-riga { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--text-soft); padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.riepilogo-luoghi-riga:last-child { border-bottom: none; }
+.riepilogo-luoghi-riga strong { color: var(--text); font-family: var(--font-mono); }
+.riepilogo-luoghi-riga.is-mancante { color: var(--red); }
+.riepilogo-luoghi-riga.is-mancante strong { color: var(--red-dark); }
 
 /* ---------------------------------------------------------------------- */
 /* Stampa / PDF                                                            */

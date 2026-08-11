@@ -1,9 +1,55 @@
-# Vacation Builder — v42 (Backup dentro Impostazioni)
+# Vacation Builder — v44 (Liste predefinite, luoghi di stoccaggio)
 
 Registro personale di viaggio, offline (tranne mappe, geolocalizzazione, routing e Font Awesome,
 online per natura). Installabile come PWA.
 
-## Novità v42
+## Novità v44
+
+- **Nuova sezione "Liste predefinite"** nel menu principale: modelli riutilizzabili di voci
+  (senza costo, con la stessa quantità al completo — secca/per giorno/per persona/per persona-
+  giorno) da tenere come archivio, es. "Lista Default Vacanza Montagna". Ogni modello è una
+  vacanza a sé nel senso del repository: destinazioni e tappe restano il *dove*, le liste
+  predefinite diventano il *cosa portare* riutilizzabile.
+- **Import nella Lista di una vacanza**, sia nella lista generale (valigia) sia in quella di un
+  singolo giorno: puoi selezionare più liste predefinite insieme. Se lo scope di destinazione ha
+  già delle voci, un'unica domanda per l'intera operazione — **sostituire** o **integrare** —
+  altrimenti si importa direttamente. Nelle voci perGiorno/perPersonaGiorno importate in un
+  singolo giorno (dove quel concetto non esiste), il numero viene risolto subito in una quantità
+  secca usando persone/giorni della vacanza al momento dell'import: da lì in poi è un numero fisso
+  come un altro. Una volta importate le voci sono copie indipendenti: modificare il modello di
+  origine (o la vacanza) non tocca più l'altra parte.
+- **Luoghi di stoccaggio** (Impostazioni → Luoghi di stoccaggio): etichette riutilizzabili tipo
+  "Valigia grande rossa", "Zaino blu", "Auto", assegnabili a qualunque voce Lista (vacanza o
+  modello predefinito) e creabili al volo con un pulsante "+" mentre si compila una voce, senza
+  perdere il form aperto.
+- **Riepilogo per luogo di stoccaggio** nella scheda Lista di ogni vacanza (e nella stampa): somma
+  quante "cose" (quantità totale, o 1 se la voce non ne ha una) vanno in ciascun luogo, su tutta
+  la vacanza — generale più tutti i giorni insieme — e quante non hanno ancora un luogo assegnato.
+- Bump di schema (`DB_VERSION` 6 → 7): tre nuovi store (`listePredefinite`, `vociPredefinite`,
+  `luoghiStoccaggio`). Nessun impatto sui dati esistenti — solo store aggiuntivi, niente viene
+  toccato in quelli già presenti.
+
+## Novità v43 — Quantità nelle voci Lista
+
+- **Le voci della Lista possono avere una quantità**, indipendente dal costo: una voce può avere
+  l'una, l'altro, entrambi o nessuno dei due. Quattro modalità, sullo stesso modello già usato per
+  il costo (secco/a persona/da dividere):
+  - **Secca** — un numero fisso (es. "5 magliette")
+  - **Per giorno** — valore × numero di giorni della vacanza (es. "2 calzini/giorno" su 5 giorni = 10)
+  - **Per persona** — valore × numero di persone, che segue la vacanza o può essere personalizzato
+    per quella voce (stesso meccanismo "segue/personalizza" già usato per il costo)
+  - **Per persona/giorno** — combinazione delle due (es. "1 bottiglia d'acqua a testa al giorno")
+  - Solo **secca** e **per persona** nella lista di un singolo giorno: lì "per giorno" non avrebbe
+    un significato chiaro, essendo la voce già legata a un giorno solo.
+  - Unità di misura libera e opzionale (pz, bottiglie, confezioni...).
+- **Il costo può essere "per unità"**: quando una voce ha sia costo che quantità, una spunta
+  dedicata lascia scegliere se l'importo inserito è già il totale (comportamento di sempre) oppure
+  il prezzo di una singola unità, moltiplicato automaticamente per la quantità nel Budget e in
+  stampa.
+- Nessuna migrazione di database: i nuovi campi sono gestiti con lo stesso meccanismo già in uso
+  per il costo (valori di default assegnati alla prima lettura di ogni voce esistente).
+
+## Novità v42 — Backup dentro Impostazioni
 
 - **Backup è ora una scheda di Impostazioni**, invece di una voce a sé nel menu — stessa
   esportazione/importazione di sempre, stesso comportamento, solo raggiungibile da Impostazioni →

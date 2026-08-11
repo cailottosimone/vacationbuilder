@@ -2,6 +2,7 @@ import * as repo from '../repository/index.js';
 import { escapeHtml, formatDate, minutesToTime } from '../utils.js';
 import { computeOrariVoci, mezzoLabel, defaultAlloggioTappaId } from '../components/timeline.js';
 import { openInspector, closeInspector, showModal } from '../components/dialog.js';
+import { formatQuantita } from '../components/quantita-widget.js';
 
 export function apriSelezioneStampa(vacanzaId) {
   openInspector(
@@ -82,7 +83,7 @@ export async function stampaVacanza(vacanzaId, sezioni = { programma: true, budg
   }
 
   if (sezioni.budget) {
-    corpoHtml += await printBudgetHtml(vacanza);
+    corpoHtml += await printBudgetHtml(vacanza, giornate);
   }
 
   if (sezioni.lista) {
@@ -100,7 +101,8 @@ export async function stampaVacanza(vacanzaId, sezioni = { programma: true, budg
   window.print();
 }
 
-export async function printBudgetHtml(vacanza) {
+export async function printBudgetHtml(vacanza, giornate = []) {
+  const numeroGiorni = giornate.length;
   const spese = await repo.listSpeseByVacanza(vacanza.id);
   const categorie = await repo.listCategorieSpesa();
   const categorieById = Object.fromEntries(categorie.map((c) => [c.id, c]));
@@ -108,7 +110,7 @@ export async function printBudgetHtml(vacanza) {
   const listaConCosto = (await repo.listListaVociByVacanza(vacanza.id)).filter((v) => v.modalita && v.contaNelTotale !== false);
 
   const righeSpese = spese.map((s) => {
-    const importo = repo.calcolaImportoRecord(s, vacanza);
+    const importo = repo.calcolaImportoRecord(s, vacanza, numeroGiorni);
     const cat = s.categoriaId ? categorieById[s.categoriaId] : null;
     const isCondivisa = repo.isRecordCondiviso(s, vacanza);
     return `<div class="print-voce">
@@ -121,11 +123,12 @@ export async function printBudgetHtml(vacanza) {
   });
 
   const righeLista = listaConCosto.map((v) => {
-    const importo = repo.calcolaImportoRecord(v, vacanza);
+    const importo = repo.calcolaImportoRecord(v, vacanza, numeroGiorni);
     const isCondivisa = repo.isRecordCondiviso(v, vacanza);
+    const quantitaTotale = v.quantitaModalita ? repo.calcolaQuantitaTotale(v, vacanza, numeroGiorni) : null;
     return `<div class="print-voce">
       <div class="print-voce-corpo">
-        <div class="print-voce-titolo">${escapeHtml(v.testo)}</div>
+        <div class="print-voce-titolo">${escapeHtml(v.testo)}${quantitaTotale != null ? ` · ×${formatQuantita(quantitaTotale)}${v.quantitaUnita ? ` ${escapeHtml(v.quantitaUnita)}` : ''}` : ''}</div>
         <div class="print-voce-meta">da Lista · ${isCondivisa ? 'Condivisa' : 'Extra'}</div>
       </div>
       <div class="print-voce-ora">${importo.toFixed(2)}€</div>
@@ -159,13 +162,15 @@ export async function printListaHtml(vacanza, giornate) {
     ? `<div class="print-recap"><em>I prezzi indicati qui sono già inclusi nel totale del Budget: non sommarli di nuovo.</em></div>`
     : '';
 
+  const numeroGiorni = giornate.length;
   const sezioniHtml = sezioniLista
     .map((sez) => {
       const righeVoci = sez.voci.map((v) => {
-        const importo = v.modalita ? repo.calcolaImportoRecord(v, vacanza) : null;
+        const importo = v.modalita ? repo.calcolaImportoRecord(v, vacanza, numeroGiorni) : null;
+        const quantitaTotale = v.quantitaModalita ? repo.calcolaQuantitaTotale(v, vacanza, numeroGiorni) : null;
         return `<div class="print-voce">
           <div class="print-voce-corpo">
-            <div class="print-voce-titolo">${v.fatto ? '☑' : '☐'} ${escapeHtml(v.testo)}</div>
+            <div class="print-voce-titolo">${v.fatto ? '☑' : '☐'} ${escapeHtml(v.testo)}${quantitaTotale != null ? ` · ×${formatQuantita(quantitaTotale)}${v.quantitaUnita ? ` ${escapeHtml(v.quantitaUnita)}` : ''}` : ''}</div>
           </div>
           ${importo != null ? `<div class="print-voce-ora">${importo.toFixed(2)}€</div>` : ''}
         </div>`;
@@ -178,7 +183,50 @@ export async function printListaHtml(vacanza, giornate) {
     })
     .join('');
 
-  return notaCosti + sezioniHtml;
+  return notaCosti + sezioniHtml + (await printRiepilogoLuoghiHtml(vacanza, sezioniLista, numeroGiorni));
+}
+
+/** Stessa somma "pezzi per luogo" della scheda Lista a schermo, ma su TUTTE le sezioni appena
+ * stampate (generale + ogni giorno incluso in questa stampa). Solo se almeno una voce ha un
+ * luogo assegnato — altrimenti sarebbe una tabella vuota che non aggiunge nulla alla stampa. */
+async function printRiepilogoLuoghiHtml(vacanza, sezioniLista, numeroGiorni) {
+  const tutteVoci = sezioniLista.flatMap((sez) => sez.voci);
+  if (!tutteVoci.some((v) => v.luogoStoccaggioId)) return '';
+
+  const luoghi = await repo.listLuoghiStoccaggio();
+  const luoghiById = Object.fromEntries(luoghi.map((l) => [l.id, l]));
+  const conteggi = {};
+  for (const v of tutteVoci) {
+    const pezzi = v.quantitaModalita ? repo.calcolaQuantitaTotale(v, vacanza, numeroGiorni) || 0 : 1;
+    const key = v.luogoStoccaggioId || '_nessuno';
+    conteggi[key] = (conteggi[key] || 0) + pezzi;
+  }
+  const righe = Object.entries(conteggi)
+    .filter(([key]) => key !== '_nessuno')
+    .map(([key, count]) => ({ nome: luoghiById[key] ? luoghiById[key].nome : 'Luogo eliminato', count }))
+    .sort((a, b) => b.count - a.count);
+  const senzaLuogo = conteggi._nessuno || 0;
+
+  return `
+    <div class="print-giorno">
+      <div class="print-giorno-titolo">Riepilogo per luogo di stoccaggio</div>
+      ${righe
+        .map(
+          (r) => `<div class="print-voce">
+            <div class="print-voce-corpo"><div class="print-voce-titolo">${escapeHtml(r.nome)}</div></div>
+            <div class="print-voce-ora">${formatQuantita(r.count)}</div>
+          </div>`
+        )
+        .join('')}
+      ${
+        senzaLuogo
+          ? `<div class="print-voce">
+              <div class="print-voce-corpo"><div class="print-voce-titolo">Da assegnare</div></div>
+              <div class="print-voce-ora">${formatQuantita(senzaLuogo)}</div>
+            </div>`
+          : ''
+      }
+    </div>`;
 }
 
 export async function printVoceHtml(voce, tipiById, nomeTappa, vacanza, giornata) {

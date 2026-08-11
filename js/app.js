@@ -9,13 +9,19 @@ import {
   renderCanvasImpostazioni, renderCanvasHome,
   openDestinazioneForm, handleDeleteDestinazione, openTappaForm, handleDeleteTappa,
   openTipoTappaForm, handleDeleteTipoTappa, openCategoriaDestinazioneForm, handleDeleteCategoriaDestinazione,
-  openCategoriaSpesaForm, handleDeleteCategoriaSpesa,
+  openCategoriaSpesaForm, handleDeleteCategoriaSpesa, openLuogoStoccaggioForm, handleDeleteLuogoStoccaggio,
 } from './views/archivio.js';
 import {
   renderCanvasVacanze, openVacanzaForm, handleDeleteVacanza, openSpesaForm, openListaVoceForm,
   handleAddGiorno, handleDeleteGiorno, openVoceTappaForm, openVocePartenzaRientroForm,
-  openVoceSpostamentoForm, openAddAlloggioPoolForm, openSetAlloggioGiornoForm,
+  openVoceSpostamentoForm, openAddAlloggioPoolForm, openSetAlloggioGiornoForm, openImportListaPredefinitaForm,
 } from './views/vacanza.js';
+import {
+  renderCanvasListePredefinite, renderListePredefiniteList, openListaPredefinitaForm, handleDeleteListaPredefinita,
+  openVocePredefinitaForm, handleDeleteVocePredefinita,
+} from './views/liste-predefinite.js';
+import { initSync } from './data/sync.js';
+import { mountSyncIndicator } from './components/sync-indicator.js';
 
 
 /* ---------------------------------------------------------------------- */
@@ -26,6 +32,7 @@ export const NAV_ITEMS = [
   { key: 'home', label: 'Home', icon: '<i class="fa-solid fa-house"></i>' },
   { key: 'destinazioni', label: 'Destinazioni', icon: '<i class="fa-solid fa-plane"></i>' },
   { key: 'vacanze', label: 'Vacanze', icon: '<i class="fa-solid fa-hiking"></i>' },
+  { key: 'listePredefinite', label: 'Liste predefinite', icon: '<i class="fa-solid fa-clipboard-list"></i>' },
   { key: 'esplora', label: 'Esplora', icon: '<i class="fa-solid fa-binoculars"></i>' },
   { key: 'impostazioni', label: 'Impostazioni', icon: '<i class="fa-solid fa-gear"></i>' },
 ];
@@ -35,9 +42,10 @@ export const state = {
   selectedDestinazioneId: null,
   selectedVacanzaId: null,
   selectedGiornataId: null,
+  selectedListaPredefinitaId: null,
   activeTipoFilter: new Set(),
   destinazioniListView: 'griglia', // 'griglia' | 'righe' — solo per la sessione
-  impostazioniTab: 'categorie', // 'categorie' | 'tipi' | 'categorieSpesa' | 'routing' | 'navigazione' | 'backup'
+  impostazioniTab: 'categorie', // 'categorie' | 'tipi' | 'categorieSpesa' | 'luoghiStoccaggio' | 'routing' | 'navigazione' | 'backup'
   vacanzaTab: 'programma', // 'programma' | 'budget' | 'lista'
   listaGiornoSelezionato: null, // null = lista generale della vacanza
   vacanzeListView: 'griglia',
@@ -71,6 +79,10 @@ async function init() {
   bindStaticEvents();
   initSpotlight();
   await renderCanvas();
+  mountSyncIndicator(document.getElementById('sync-indicator'));
+  // Non bloccante: l'app è già utilizzabile mentre la sincronizzazione si inizializza in
+  // background (offline-first fino in fondo, anche al primo avvio).
+  initSync();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -88,6 +100,7 @@ async function goToView(key) {
   state.selectedDestinazioneId = null;
   state.selectedVacanzaId = null;
   state.selectedGiornataId = null;
+  state.selectedListaPredefinitaId = null;
   state.activeTipoFilter = new Set();
   renderRailNav();
   await renderCanvas();
@@ -202,6 +215,9 @@ export async function renderCanvas() {
     } else if (state.view === 'vacanze') {
       if (state.selectedVacanzaId) await renderCanvasVacanze();
       else await renderVacanzeList();
+    } else if (state.view === 'listePredefinite') {
+      if (state.selectedListaPredefinitaId) await renderCanvasListePredefinite();
+      else await renderListePredefiniteList();
     } else if (state.view === 'esplora') await renderCanvasEsplora();
     else if (state.view === 'impostazioni') await renderCanvasImpostazioni();
     else await renderCanvasHome();
@@ -406,6 +422,36 @@ async function handleCanvasClick(e) {
   } else if (action === 'delete-categoria-spesa') {
     e.stopPropagation();
     await handleDeleteCategoriaSpesa(id);
+  } else if (action === 'new-luogo-stoccaggio') {
+    openLuogoStoccaggioForm();
+  } else if (action === 'edit-luogo-stoccaggio') {
+    openLuogoStoccaggioForm(await repo.getLuogoStoccaggio(id));
+  } else if (action === 'delete-luogo-stoccaggio') {
+    e.stopPropagation();
+    await handleDeleteLuogoStoccaggio(id);
+  } else if (action === 'select-lista-predefinita') {
+    state.view = 'listePredefinite';
+    state.selectedListaPredefinitaId = id;
+    renderRailNav();
+    await renderCanvas();
+  } else if (action === 'back-to-liste-predefinite') {
+    state.selectedListaPredefinitaId = null;
+    await renderCanvas();
+  } else if (action === 'new-lista-predefinita') {
+    openListaPredefinitaForm();
+  } else if (action === 'edit-lista-predefinita') {
+    openListaPredefinitaForm(await repo.getListaPredefinita(state.selectedListaPredefinitaId));
+  } else if (action === 'delete-lista-predefinita') {
+    await handleDeleteListaPredefinita(state.selectedListaPredefinitaId);
+  } else if (action === 'new-voce-predefinita') {
+    await openVocePredefinitaForm(state.selectedListaPredefinitaId);
+  } else if (action === 'edit-voce-predefinita') {
+    await openVocePredefinitaForm(state.selectedListaPredefinitaId, await repo.getVocePredefinita(id));
+  } else if (action === 'delete-voce-predefinita') {
+    e.stopPropagation();
+    await handleDeleteVocePredefinita(id);
+  } else if (action === 'import-lista-predefinita') {
+    await openImportListaPredefinitaForm(state.selectedVacanzaId, state.listaGiornoSelezionato);
   }
 }
 

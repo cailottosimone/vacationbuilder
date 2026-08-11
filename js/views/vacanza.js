@@ -1,8 +1,10 @@
 import * as repo from '../repository/index.js';
 import { escapeHtml, formatDate, timeToMinutes } from '../utils.js';
 import { PROFILO_PER_MEZZO, calcolaDistanzaStrada } from '../routing.js';
-import { openInspector, closeInspector, showModal, mountPhotoGallery } from '../components/dialog.js';
+import { openInspector, closeInspector, showModal, showChoiceModal, mountPhotoGallery } from '../components/dialog.js';
 import { mountPrezzoWidget } from '../components/prezzo-widget.js';
+import { mountQuantitaWidget, formatQuantita } from '../components/quantita-widget.js';
+import { luogoSelectHtml, bindLuogoQuickAdd } from '../components/luogo-stoccaggio-select.js';
 import {
   MEZZI_TRASPORTO, mezzoLabel, computeOrariVoci, defaultAlloggioTappaId,
   endingLocationId, startingLocationId, renderVoceHtml, getRifOptions, rifOptionsHtml,
@@ -170,7 +172,7 @@ export async function renderCanvasVacanze() {
       ${toolbarHtml}
       ${timelineHtml}`;
   } else if (vTab === 'budget') {
-    tabContentHtml = await renderBudgetTabHtml(vacanza);
+    tabContentHtml = await renderBudgetTabHtml(vacanza, giornate);
   } else {
     tabContentHtml = await renderListaTabHtml(vacanza, giornate);
   }
@@ -309,21 +311,47 @@ export async function opzioniVociSpesa(giornate) {
   return gruppi;
 }
 
-export function calcoloLabelBudget(record, vacanza) {
+/** Spiega da dove viene una quantità calcolata, per il tooltip sul badge "×N" in Lista
+ * (es. "2 × 5 giorni" oppure "1 × 4 persone"). Per 'secca' non serve, la quantità è già il numero. */
+function quantitaSorgenteLabel(record, vacanza, numeroGiorni) {
+  const valore = formatQuantita(Number(record.quantitaValore) || 0);
+  if (record.quantitaModalita === 'perGiorno') return `${valore} × ${numeroGiorni} giorni`;
+  if (record.quantitaModalita === 'perPersona') {
+    const persone = repo.risolviNumeroPersoneQuantita(record, vacanza);
+    return `${valore} × ${persone} person${persone === 1 ? 'a' : 'e'}`;
+  }
+  if (record.quantitaModalita === 'perPersonaGiorno') {
+    const persone = repo.risolviNumeroPersoneQuantita(record, vacanza);
+    return `${valore} × ${persone} person${persone === 1 ? 'a' : 'e'} × ${numeroGiorni} giorni`;
+  }
+  return '';
+}
+
+export function calcoloLabelBudget(record, vacanza, numeroGiorni) {
+  let base;
   if (record.modalita === 'aPersona' || record.modalita === 'daDividere') {
     const persone = repo.risolviNumeroPersone(record, vacanza);
     const segue = record.numeroPersone == null;
     if (record.modalita === 'aPersona') {
-      return `${(Number(record.importoAPersona) || 0).toFixed(2)}€ × ${persone}${segue ? ' <span class="budget-segue">(segue vacanza)</span>' : ''}`;
+      base = `${(Number(record.importoAPersona) || 0).toFixed(2)}€ × ${persone}${segue ? ' <span class="budget-segue">(segue vacanza)</span>' : ''}`;
+    } else {
+      const quota = repo.calcolaQuotaAPersona(record, vacanza);
+      base = `${(Number(record.importoDaDividere) || 0).toFixed(2)}€ ÷ ${persone}${segue ? ' <span class="budget-segue">(segue vacanza)</span>' : ''} ≈ ${quota}€ cad.`;
     }
-    const quota = repo.calcolaQuotaAPersona(record, vacanza);
-    return `${(Number(record.importoDaDividere) || 0).toFixed(2)}€ ÷ ${persone}${segue ? ' <span class="budget-segue">(segue vacanza)</span>' : ''} ≈ ${quota}€ cad.`;
+  } else {
+    base = 'totale';
   }
-  return 'totale';
+  // "Costo per unità": l'importo sopra è per UNA unità, moltiplicato per la quantità della voce.
+  if (record.costoPerUnita && record.quantitaModalita) {
+    const q = repo.calcolaQuantitaTotale(record, vacanza, numeroGiorni);
+    base += ` <span class="budget-segue">× ${formatQuantita(q)}${record.quantitaUnita ? ` ${escapeHtml(record.quantitaUnita)}` : ''} (quantità)</span>`;
+  }
+  return base;
 }
 
 
-export async function renderBudgetTabHtml(vacanza) {
+export async function renderBudgetTabHtml(vacanza, giornate = []) {
+  const numeroGiorni = giornate.length;
   const spese = await repo.listSpeseByVacanza(vacanza.id);
   const categorie = await repo.listCategorieSpesa();
   const categorieById = Object.fromEntries(categorie.map((c) => [c.id, c]));
@@ -331,14 +359,14 @@ export async function renderBudgetTabHtml(vacanza) {
 
   const righeSpese = await Promise.all(
     spese.map(async (s) => {
-      const importo = repo.calcolaImportoRecord(s, vacanza);
+      const importo = repo.calcolaImportoRecord(s, vacanza, numeroGiorni);
       const isCondivisa = repo.isRecordCondiviso(s, vacanza);
       const cat = s.categoriaId ? categorieById[s.categoriaId] : null;
       const voceLabel = await labelVoceSpesa(s.voceId);
       return `<tr>
         <td>${escapeHtml(s.descrizione || '—')}${voceLabel ? `<div class="settings-td-sub">${escapeHtml(voceLabel)}</div>` : ''}</td>
         <td>${cat ? escapeHtml(cat.nome) : '—'}</td>
-        <td class="settings-td-num">${calcoloLabelBudget(s, vacanza)}</td>
+        <td class="settings-td-num">${calcoloLabelBudget(s, vacanza, numeroGiorni)}</td>
         <td class="settings-td-num"><strong>${importo.toFixed(2)}€</strong></td>
         <td>${isCondivisa ? '<span class="budget-badge">Condivisa</span>' : '<span class="budget-badge is-extra">Extra</span>'}</td>
         <td class="settings-td-actions">
@@ -351,12 +379,12 @@ export async function renderBudgetTabHtml(vacanza) {
 
   const listaConCosto = (await repo.listListaVociByVacanza(vacanza.id)).filter((v) => v.modalita && v.contaNelTotale !== false);
   const righeLista = listaConCosto.map((v) => {
-    const importo = repo.calcolaImportoRecord(v, vacanza);
+    const importo = repo.calcolaImportoRecord(v, vacanza, numeroGiorni);
     const isCondivisa = repo.isRecordCondiviso(v, vacanza);
     return `<tr>
       <td>${escapeHtml(v.testo)}<div class="settings-td-sub">dalla Lista</div></td>
       <td>—</td>
-      <td class="settings-td-num">${calcoloLabelBudget(v, vacanza)}</td>
+      <td class="settings-td-num">${calcoloLabelBudget(v, vacanza, numeroGiorni)}</td>
       <td class="settings-td-num"><strong>${importo.toFixed(2)}€</strong></td>
       <td>${isCondivisa ? '<span class="budget-badge">Condivisa</span>' : '<span class="budget-badge is-extra">Extra</span>'}</td>
       <td></td>
@@ -397,18 +425,32 @@ export async function renderListaTabHtml(vacanza, giornate) {
   </div>`;
 
   const voci = selezionato ? await repo.listListaVociGiorno(selezionato) : await repo.listListaVociGenerale(vacanza.id);
+  const numeroGiorni = giornate.length;
+  const luoghi = await repo.listLuoghiStoccaggio();
+  const luoghiById = Object.fromEntries(luoghi.map((l) => [l.id, l]));
+  const numListePredefinite = (await repo.listListePredefinite()).length;
 
   const righeHtml = voci
     .map((v) => {
-      const importo = v.modalita ? repo.calcolaImportoRecord(v, vacanza) : null;
+      // Se il costo è "per unità" la cifra qui sotto è già il totale (unitario × quantità):
+      // calcolaImportoRecord se ne occupa da sé, non c'è nulla da moltiplicare due volte.
+      const importo = v.modalita ? repo.calcolaImportoRecord(v, vacanza, numeroGiorni) : null;
+      const quantitaTotale = v.quantitaModalita ? repo.calcolaQuantitaTotale(v, vacanza, numeroGiorni) : null;
+      const luogo = v.luogoStoccaggioId ? luoghiById[v.luogoStoccaggioId] : null;
       return `<div class="lista-voce ${v.fatto ? 'is-fatto' : ''}">
         <label class="lista-voce-check">
           <input type="checkbox" data-action="toggle-lista-voce" data-id="${v.id}" ${v.fatto ? 'checked' : ''}>
           <span>${escapeHtml(v.testo)}</span>
         </label>
         ${
+          quantitaTotale != null
+            ? `<span class="lista-voce-quantita" title="${v.quantitaModalita !== 'secca' ? escapeHtml(quantitaSorgenteLabel(v, vacanza, numeroGiorni)) : ''}">×${formatQuantita(quantitaTotale)}${v.quantitaUnita ? ` ${escapeHtml(v.quantitaUnita)}` : ''}</span>`
+            : ''
+        }
+        ${luogo ? `<span class="badge badge--muted">${escapeHtml(luogo.nome)}</span>` : ''}
+        ${
           importo != null
-            ? `<span class="lista-voce-costo ${v.contaNelTotale ? '' : 'is-escluso'}">${importo.toFixed(2)}€${v.modalita !== 'secco' ? ` <span class="budget-segue">(${calcoloLabelBudget(v, vacanza).replace(/<[^>]+>/g, '')})</span>` : ''}${!v.contaNelTotale ? ' · escluso dal totale' : ''}</span>`
+            ? `<span class="lista-voce-costo ${v.contaNelTotale ? '' : 'is-escluso'}">${importo.toFixed(2)}€${v.modalita !== 'secco' || (v.costoPerUnita && v.quantitaModalita) ? ` <span class="budget-segue">(${calcoloLabelBudget(v, vacanza, numeroGiorni).replace(/<[^>]+>/g, '')})</span>` : ''}${!v.contaNelTotale ? ' · escluso dal totale' : ''}</span>`
             : ''
         }
         <div class="lista-voce-actions">
@@ -420,10 +462,48 @@ export async function renderListaTabHtml(vacanza, giornate) {
     .join('');
 
   return `
-    <p class="settings-tab-hint">Una lista generale per la vacanza (la valigia) più una per ciascun giorno. Una voce con un costo entra di default nel Budget, tra gli Extra: puoi escluderla se non deve contare.</p>
+    <p class="settings-tab-hint">Una lista generale per la vacanza (la valigia) più una per ciascun giorno. Ogni voce può avere una quantità (secca, per giorno, per persona...), un luogo di stoccaggio e/o un costo, indipendentemente l'uno dall'altro. Una voce con un costo entra di default nel Budget, tra gli Extra: puoi escluderla se non deve contare.</p>
     ${selectorHtml}
-    <div class="settings-tab-toolbar"><button class="btn btn-sm btn-primary" data-action="new-lista-voce"><i class="fa-solid fa-plus"></i> Aggiungi voce</button></div>
+    ${await renderRiepilogoLuoghiHtml(vacanza, numeroGiorni)}
+    <div class="settings-tab-toolbar">
+      <button class="btn btn-sm btn-primary" data-action="new-lista-voce"><i class="fa-solid fa-plus"></i> Aggiungi voce</button>
+      <button class="btn btn-sm btn-ghost" data-action="import-lista-predefinita" ${numListePredefinite === 0 ? 'disabled title="Crea prima una lista predefinita nella sezione dedicata"' : ''}><i class="fa-solid fa-file-import"></i> Importa da lista predefinita</button>
+    </div>
     ${voci.length ? `<div class="lista-voci">${righeHtml}</div>` : `<div class="empty-list-note">Nessuna voce ancora.</div>`}`;
+}
+
+/** Somma i "pezzi" (quantità totale, o 1 se la voce non ha quantità) di TUTTE le voci Lista della
+ * vacanza — generale + ogni giorno insieme, non solo quello che si sta guardando in questo
+ * momento — raggruppati per luogo di stoccaggio. Risponde alla domanda "cosa devo mettere dove":
+ * quante cose vanno in valigia, quante nello zaino, quante non hanno ancora un posto deciso. */
+async function renderRiepilogoLuoghiHtml(vacanza, numeroGiorni) {
+  const tutteVoci = await repo.listListaVociByVacanza(vacanza.id);
+  if (!tutteVoci.length) return '';
+  const luoghi = await repo.listLuoghiStoccaggio();
+  const luoghiById = Object.fromEntries(luoghi.map((l) => [l.id, l]));
+
+  const conteggi = {};
+  for (const v of tutteVoci) {
+    const pezzi = v.quantitaModalita ? repo.calcolaQuantitaTotale(v, vacanza, numeroGiorni) || 0 : 1;
+    const key = v.luogoStoccaggioId || '_nessuno';
+    conteggi[key] = (conteggi[key] || 0) + pezzi;
+  }
+
+  const righe = Object.entries(conteggi)
+    .filter(([key]) => key !== '_nessuno')
+    .map(([key, count]) => ({ nome: luoghiById[key] ? luoghiById[key].nome : 'Luogo eliminato', count }))
+    .sort((a, b) => b.count - a.count);
+  const senzaLuogo = conteggi._nessuno || 0;
+
+  if (!righe.length && !senzaLuogo) return '';
+
+  return `<details class="riepilogo-luoghi">
+    <summary>Riepilogo per luogo di stoccaggio</summary>
+    <div class="riepilogo-luoghi-body">
+      ${righe.map((r) => `<div class="riepilogo-luoghi-riga"><span>${escapeHtml(r.nome)}</span><strong>${formatQuantita(r.count)}</strong></div>`).join('')}
+      ${senzaLuogo ? `<div class="riepilogo-luoghi-riga is-mancante"><span>Da assegnare</span><strong>${formatQuantita(senzaLuogo)}</strong></div>` : ''}
+    </div>
+  </details>`;
 }
 
 /** Involucro comune a tutte le card della timeline: colonna oraria a piena altezza (il "taglio"
@@ -629,8 +709,17 @@ export async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
   const isEdit = !!voce;
   const vacanza = await repo.getVacanza(vacanzaId);
   const vacanzaNumeroPersone = vacanza.numeroPersone || 1;
+  const numeroGiorni = (await repo.listGiornateByVacanza(vacanzaId)).length;
+  const luoghi = await repo.listLuoghiStoccaggio();
+  // Una voce del singolo giorno è già "scoped" a quel giorno: "per giorno"/"per persona al
+  // giorno" non avrebbero un significato chiaro lì (moltiplicherebbero per i giorni di TUTTA
+  // la vacanza su una voce che vive in un giorno solo). Nella lista generale invece hanno senso.
+  const modiQuantitaDisponibili = giornataId ? ['secca', 'perPersona'] : ['secca', 'perGiorno', 'perPersona', 'perPersonaGiorno'];
 
   let haCosto = isEdit ? !!voce.modalita : false;
+  let haQuantita = isEdit ? !!voce.quantitaModalita : false;
+  const costoState = { perUnita: isEdit ? !!voce.costoPerUnita : false };
+
   const prezzoState = {
     modalita: isEdit && voce.modalita ? voce.modalita : 'secco',
     importoTotale: isEdit ? voce.importoTotale : null,
@@ -640,12 +729,31 @@ export async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
     numeroPersoneEsplicito: isEdit && voce.numeroPersone != null ? voce.numeroPersone : vacanzaNumeroPersone,
   };
 
+  const quantitaState = {
+    modalita: isEdit && voce.quantitaModalita ? voce.quantitaModalita : (modiQuantitaDisponibili[0] || 'secca'),
+    valore: isEdit ? voce.quantitaValore : null,
+    unita: isEdit ? voce.quantitaUnita : null,
+    numeroPersone: isEdit ? voce.quantitaNumeroPersone : null,
+    numeroPersoneEsplicito: isEdit && voce.quantitaNumeroPersone != null ? voce.quantitaNumeroPersone : vacanzaNumeroPersone,
+  };
+
   openInspector(
     isEdit ? 'Modifica voce' : giornataId ? 'Nuova voce per questo giorno' : 'Nuova voce nella lista generale',
     `<form id="form-lista-voce">
       <div class="field">
         <label class="field-label">Cosa</label>
         <input type="text" name="testo" required placeholder="Es. Scarpe da trekking" value="${isEdit ? escapeHtml(voce.testo) : ''}" autofocus>
+      </div>
+      <div class="field">
+        <label class="chip-checkbox">
+          <input type="checkbox" id="lista-ha-quantita" ${haQuantita ? 'checked' : ''}>
+          <span>Ha una quantità</span>
+        </label>
+      </div>
+      <div id="lista-quantita-container"></div>
+      <div class="field">
+        <label class="field-label">Luogo di stoccaggio (opzionale)</label>
+        ${luogoSelectHtml(luoghi, isEdit ? voce.luogoStoccaggioId : null, { selectId: 'lista-luogo-select', addBtnId: 'lista-luogo-add' })}
       </div>
       <div class="field">
         <label class="chip-checkbox">
@@ -661,6 +769,22 @@ export async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
     </form>`
   );
 
+  bindLuogoQuickAdd('lista-luogo-select', 'lista-luogo-add');
+
+  function renderQuantitaContainer() {
+    const container = document.getElementById('lista-quantita-container');
+    if (!haQuantita) {
+      container.innerHTML = '';
+      return;
+    }
+    container.innerHTML = `<div id="lista-quantita-widget"></div>`;
+    mountQuantitaWidget('lista-quantita-widget', quantitaState, {
+      vacanzaNumeroPersone,
+      numeroGiorni,
+      modiDisponibili: modiQuantitaDisponibili,
+    });
+  }
+
   function renderCostoContainer() {
     const container = document.getElementById('lista-costo-container');
     if (!haCosto) {
@@ -669,9 +793,19 @@ export async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
     }
     container.innerHTML = `
       <div class="field">
-        <label class="field-label">Importo</label>
+        <label class="field-label" id="lista-costo-importo-label">${haQuantita && costoState.perUnita ? 'Importo (per unità)' : 'Importo'}</label>
         <div id="lista-prezzo-widget"></div>
       </div>
+      ${
+        haQuantita
+          ? `<div class="field">
+              <label class="chip-checkbox">
+                <input type="checkbox" id="lista-costo-per-unita" ${costoState.perUnita ? 'checked' : ''}>
+                <span>È il prezzo di una singola unità (verrà moltiplicato per la quantità)</span>
+              </label>
+            </div>`
+          : ''
+      }
       <div class="field">
         <label class="chip-checkbox">
           <input type="checkbox" name="contaNelTotale" id="lista-conta-totale" ${!isEdit || voce.contaNelTotale !== false ? 'checked' : ''}>
@@ -679,9 +813,25 @@ export async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
         </label>
       </div>`;
     mountPrezzoWidget('lista-prezzo-widget', prezzoState, vacanzaNumeroPersone);
+    const perUnitaCheckbox = document.getElementById('lista-costo-per-unita');
+    if (perUnitaCheckbox) {
+      perUnitaCheckbox.addEventListener('change', (e) => {
+        costoState.perUnita = e.target.checked;
+        const label = document.getElementById('lista-costo-importo-label');
+        if (label) label.textContent = costoState.perUnita ? 'Importo (per unità)' : 'Importo';
+      });
+    }
   }
 
+  renderQuantitaContainer();
   renderCostoContainer();
+
+  document.getElementById('lista-ha-quantita').addEventListener('change', (e) => {
+    haQuantita = e.target.checked;
+    if (!haQuantita) costoState.perUnita = false;
+    renderQuantitaContainer();
+    renderCostoContainer(); // il checkbox "prezzo per unità" appare/scompare insieme alla quantità
+  });
 
   document.getElementById('lista-ha-costo').addEventListener('change', (e) => {
     haCosto = e.target.checked;
@@ -702,12 +852,91 @@ export async function openListaVoceForm(vacanzaId, giornataId, voce = null) {
       importoDaDividere: fd.get('importoDaDividere'),
       numeroPersone: prezzoState.numeroPersone,
       contaNelTotale: haCosto ? contaNelTotale : false,
+      costoPerUnita: haCosto && haQuantita ? costoState.perUnita : false,
+      quantitaModalita: haQuantita ? quantitaState.modalita : null,
+      quantitaValore: fd.get('quantitaValore'),
+      quantitaNumeroPersone: quantitaState.numeroPersone,
+      quantitaUnita: fd.get('quantitaUnita'),
+      luogoStoccaggioId: fd.get('luogoStoccaggioId') || null,
     };
     if (isEdit) await repo.updateListaVoce(voce.id, payload);
     else await repo.createListaVoce({ vacanzaId, giornataId, ...payload });
     closeInspector();
     await renderCanvas();
     showToast('Voce salvata');
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Import da lista predefinita                                             */
+/* ---------------------------------------------------------------------- */
+
+/** giornataId: null = lista generale della vacanza, altrimenti la lista di quel giorno. */
+export async function openImportListaPredefinitaForm(vacanzaId, giornataId) {
+  const liste = await repo.listListePredefinite();
+  if (!liste.length) {
+    showToast('Non hai ancora liste predefinite. Creale nella sezione "Liste predefinite".');
+    return;
+  }
+  const conConteggio = await Promise.all(
+    liste.map(async (l) => ({ ...l, count: (await repo.listVociPredefiniteByLista(l.id)).length }))
+  );
+
+  openInspector(
+    'Importa da lista predefinita',
+    `<form id="form-importa-predefinita">
+      <p class="settings-tab-hint">Seleziona una o più liste: le loro voci verranno copiate qui, come punto di partenza modificabile.</p>
+      <div class="import-lista-elenco">
+        ${conConteggio
+          .map(
+            (l) => `<div class="import-lista-row">
+              <label class="import-lista-check">
+                <input type="checkbox" name="listaId" value="${l.id}">
+                <span>${escapeHtml(l.nome)}</span>
+              </label>
+              <span class="hint" style="margin:0;">${l.count} voc${l.count === 1 ? 'e' : 'i'}</span>
+            </div>`
+          )
+          .join('')}
+      </div>
+      <div class="inspector-footer">
+        <button type="submit" class="btn btn-primary">Importa</button>
+        <button type="button" class="btn btn-ghost" data-role="close-inspector">Annulla</button>
+      </div>
+    </form>`
+  );
+
+  document.getElementById('form-importa-predefinita').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const selezionate = fd.getAll('listaId');
+    if (!selezionate.length) {
+      showToast('Seleziona almeno una lista');
+      return;
+    }
+
+    // La scelta sostituisci/integra riguarda l'intera operazione (anche con più liste
+    // selezionate insieme), non una domanda ripetuta per ciascuna: e si salta del tutto se lo
+    // scope di destinazione è già vuoto, non c'è nulla da sostituire o integrare.
+    const esistenti = giornataId ? await repo.listListaVociGiorno(giornataId) : await repo.listListaVociGenerale(vacanzaId);
+    let modalitaImport = 'integra';
+    if (esistenti.length) {
+      const scelta = await showChoiceModal({
+        title: 'La lista contiene già delle voci',
+        bodyHtml: `${giornataId ? 'La lista di questo giorno' : 'La lista generale'} ha già <strong>${esistenti.length}</strong> voc${esistenti.length === 1 ? 'e' : 'i'}. Vuoi sostituirle con quelle importate, o aggiungere le nuove a quelle già presenti?`,
+        choices: [
+          { label: 'Sostituisci esistenti', value: 'sostituisci', danger: true },
+          { label: 'Integra (aggiungi)', value: 'integra' },
+        ],
+      });
+      if (!scelta) return; // annullato: non si importa nulla, per non rischiare un'azione distruttiva non voluta
+      modalitaImport = scelta;
+    }
+
+    await repo.importListePredefiniteInVacanza(selezionate, vacanzaId, giornataId, modalitaImport);
+    closeInspector();
+    await renderCanvas();
+    showToast('Lista importata');
   });
 }
 

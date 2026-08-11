@@ -26,6 +26,83 @@ export function closeInspector() {
   inspectorScrim.classList.remove('is-open');
 }
 
+/** Modale con un solo campo testo (per creazioni "rapide" da dentro un altro form, es. un
+ * nuovo Luogo di stoccaggio senza abbandonare la voce che si sta compilando: usa il modale
+ * generico invece dell'inspector, che è un'istanza unica e cancellerebbe il form aperto sotto).
+ * Ritorna la stringa inserita (già trim), o null se annullato/vuoto. */
+export function showPromptModal({ title, placeholder = '', confirmLabel = 'Crea' }) {
+  return new Promise((resolve) => {
+    modalRoot.innerHTML = `
+      <div class="modal-overlay" data-role="overlay">
+        <div class="modal-card">
+          <div class="modal-title">${escapeHtml(title)}</div>
+          <div class="modal-body">
+            <input type="text" class="modal-prompt-input" id="modal-prompt-input" placeholder="${escapeHtml(placeholder)}" autofocus>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" data-role="cancel">Annulla</button>
+            <button class="btn btn-primary" data-role="confirm">${escapeHtml(confirmLabel)}</button>
+          </div>
+        </div>
+      </div>`;
+    const overlay = modalRoot.querySelector('[data-role="overlay"]');
+    const input = modalRoot.querySelector('#modal-prompt-input');
+    const close = (result) => {
+      modalRoot.innerHTML = '';
+      resolve(result);
+    };
+    const confirm = () => {
+      const val = (input.value || '').trim();
+      close(val || null);
+    };
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(null);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+    });
+    modalRoot.querySelector('[data-role="cancel"]').addEventListener('click', () => close(null));
+    modalRoot.querySelector('[data-role="confirm"]').addEventListener('click', confirm);
+    input.focus();
+  });
+}
+
+/** Modale di scelta a più opzioni (non solo conferma/annulla): usata per "sostituisci o integra"
+ * durante l'import di una lista predefinita. Ritorna il `value` scelto, o null se annullato
+ * (click fuori o Annulla) — nullo di proposito, per non far scattare per sbaglio un'azione
+ * distruttiva ("sostituisci") solo perché l'utente ha chiuso il modale distrattamente. */
+export function showChoiceModal({ title, bodyHtml = '', choices }) {
+  return new Promise((resolve) => {
+    modalRoot.innerHTML = `
+      <div class="modal-overlay" data-role="overlay">
+        <div class="modal-card">
+          <div class="modal-title">${escapeHtml(title)}</div>
+          ${bodyHtml ? `<div class="modal-body">${bodyHtml}</div>` : ''}
+          <div class="modal-actions modal-actions--choices">
+            ${choices
+              .map(
+                (c, i) => `<button class="btn ${c.danger ? 'btn-danger-solid' : i === 0 ? 'btn-primary' : 'btn-ghost'}" data-choice-index="${i}">${escapeHtml(c.label)}</button>`
+              )
+              .join('')}
+            <button class="btn btn-ghost" data-role="cancel">Annulla</button>
+          </div>
+        </div>
+      </div>`;
+    const overlay = modalRoot.querySelector('[data-role="overlay"]');
+    const close = (result) => {
+      modalRoot.innerHTML = '';
+      resolve(result);
+    };
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(null);
+    });
+    modalRoot.querySelector('[data-role="cancel"]').addEventListener('click', () => close(null));
+    modalRoot.querySelectorAll('[data-choice-index]').forEach((btn) => {
+      btn.addEventListener('click', () => close(choices[Number(btn.dataset.choiceIndex)].value));
+    });
+  });
+}
+
 /** Collega un input coordinate a un div-hint che mostra l'esito del parsing in tempo reale. */
 export function bindCoordinateHint(inputEl, hintEl) {
   const update = () => {
