@@ -173,14 +173,32 @@ export async function pushRecord(storeName, record) {
     if (!payload) return false; // almeno un'immagine non ancora caricabile: si riprova al prossimo giro
   }
 
-  const { error } = await client
-    .from(tableNameFor(storeName))
-    .upsert(payload, { onConflict: conflictKeyFor(storeName) });
-  if (error) {
+  // Copia mutabile: se lo schema cloud non conosce ancora un campo del record locale (perché
+  // l'app è evoluta più dello schema Supabase, o perché è un campo tecnico rimasto da una
+  // versione precedente), lo si toglie SOLO da questo invio e si ritenta — il resto del record
+  // arriva comunque, invece di restare bloccato per sempre in coda per colpa di un unico campo
+  // sconosciuto. Non tocca mai l'oggetto locale (record): solo questa copia.
+  payload = { ...payload };
+  for (let tentativo = 0; tentativo < 8; tentativo++) {
+    const { error } = await client
+      .from(tableNameFor(storeName))
+      .upsert(payload, { onConflict: conflictKeyFor(storeName) });
+    if (!error) return true;
+
+    const campoSconosciuto = /Could not find the '([^']+)' column/.exec(error.message || '')?.[1];
+    if (campoSconosciuto && campoSconosciuto in payload) {
+      console.warn(
+        `Sync: la colonna "${campoSconosciuto}" non esiste (ancora) nello schema cloud di ${storeName}: questo campo non si sincronizza finché non aggiungi la colonna in supabase/schema.sql. Il resto del record procede comunque.`
+      );
+      delete payload[campoSconosciuto];
+      continue;
+    }
+
     console.warn(`Sync: push fallito per ${storeName}/${record.id}:`, error.message);
     return false;
   }
-  return true;
+  console.warn(`Sync: push fallito per ${storeName}/${record.id}: troppi campi sconosciuti allo schema cloud.`);
+  return false;
 }
 
 /** Recupera dal cloud tutti i record di uno store modificati dopo `sinceISO` (null = da sempre,
