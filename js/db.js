@@ -245,7 +245,13 @@ function isVivo(record) {
  * silenzio se lo store _outbox non esiste ancora (non dovrebbe succedere: creato ad ogni apertura
  * del DB) — il sync è comunque un livello opzionale, non deve mai far fallire una scrittura locale. */
 async function enqueueOutbox(storeName, id) {
-  if (TECH_STORES.includes(storeName)) return; // gli store tecnici non si sincronizzano da soli
+  // Solo gli store applicativi ELENCATI in ALL_STORES si sincronizzano: non basta escludere gli
+  // store tecnici (_outbox/_syncMeta/_imageUploads), perché "configurazione" è uno store
+  // applicativo a tutti gli effetti (chiave API Openrouteservice, sezioni nav nascoste) ma
+  // deliberatamente locale-per-dispositivo, quindi assente sia da ALL_STORES sia dallo schema
+  // cloud. Un tempo qui si controllava solo TECH_STORES: le scritture su "configurazione"
+  // finivano comunque in outbox e restavano bloccate per sempre contro una tabella che non esiste.
+  if (!ALL_STORES.includes(storeName)) return;
   try {
     const t = await tx(['_outbox'], 'readwrite');
     await reqToPromise(t.objectStore('_outbox').put({ id: `${storeName}::${id}`, store: storeName, recordId: id, queuedAt: new Date().toISOString() }));

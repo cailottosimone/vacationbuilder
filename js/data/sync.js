@@ -45,6 +45,13 @@ async function pushPending() {
   if (!pending.length) return;
 
   for (const entry of pending) {
+    if (!ALL_STORES.includes(entry.store)) {
+      // Voce di outbox per uno store non sincronizzabile (es. rimasta in coda da prima di una
+      // correzione: vedi db.js enqueueOutbox). Non esiste una tabella cloud per cui provare a
+      // inviarla: la si toglie e basta, non è un errore da ritentare all'infinito.
+      await Store.outboxRemove(entry.id);
+      continue;
+    }
     const record = await Store.get(entry.store, entry.recordId, true); // includeDeleted: anche le eliminazioni vanno inviate
     if (!record) {
       // Il record non esiste più nemmeno in forma di tombstone (caso limite): la voce di
